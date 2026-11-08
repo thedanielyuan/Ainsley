@@ -6,13 +6,17 @@ import type { AnswerVerdict, ChatMessage, HelpRung, ReplyTutoring, TutoringEvent
  * The tutoring policy: guiding principles 1 and 2 (learning over answers; the student's own
  * thinking comes before Ainsley's) as rules the app applies, not only words in the system prompt.
  *
- * For each problem Ainsley works out with solve_problem, the app tracks whether the student has
- * attempted it (an evaluate_answer check of their work) and the most help they've had, as a rung of
- * the help ladder. Before each request it works out the most help allowed this turn and tells
- * Ainsley in a system message after the student's message, appended like course context, so the
- * history stays append-only and the system prompt never changes. The results of solve_problem and
- * evaluate_answer carry the policy too, since they change it mid-turn. After each reply, a review
- * (/api/review) records the rung the reply used, so help rises one rung a turn.
+ * For each problem the student works on, the app tracks whether they've attempted it (an
+ * evaluate_answer check of their work) and the most help they've had, as a rung of the help ladder.
+ * A problem is known from solve_problem (by its problem id), from an answer check, or, when neither
+ * runs, from the review of Ainsley's reply, which says when a reply was about a problem the student
+ * brought. Before each request the app works out the most help allowed this turn and tells Ainsley
+ * in a system message after the student's message, appended like course context, so the history
+ * stays append-only and the system prompt never changes. With no problem in progress, that message
+ * sets the rule for a new one before Ainsley has written anything: their attempt or plan first, and
+ * at most a nudge. The results of solve_problem and evaluate_answer carry the policy too, since they
+ * change it mid-turn. After each reply, a review (/api/review) records the rung the reply used, so
+ * help rises one rung a turn.
  *
  * The state is folded from what each reply recorded (ChatMessage.tutoring), so editing a message or
  * regenerating a reply rewinds it with the conversation. A learner model can later lower the rung
@@ -38,15 +42,30 @@ const RUNG_NAMES: Record<HelpRung, string> = {
   solution: "the full solution",
 };
 
-// What each rung allows, as the policy states it to Ainsley (the system prompt defines the ladder).
+// What each rung allows, as the policy states it to Ainsley (the system prompt defines the ladder,
+// and the review rates replies on the same one).
 const RUNG_RULES: Record<HelpRung, string> = {
-  nudge: "a nudge: a question or pointer toward the key idea or where to look, without naming the method",
-  hint: "a specific hint: the method or next step, named but not carried out",
-  step: "a worked step: carry out the next step of their problem, short of the final answer",
-  example: "a worked example: work a similar problem in full, not this one, then have them return to theirs",
+  nudge:
+    "a nudge: point to the relevant idea or where to look (or where an error is, without saying what's wrong with it), in a sentence or a question. Don't name the method, rule or formula, work a step, show a worked example, or give the answer",
+  hint: "a specific hint: name the exact method, rule or formula for the next step only (or what's wrong in an error), without carrying it out",
+  step: "a worked step: carry out the next step of their problem for them, leaving them real work: not the final answer, or a result only arithmetic away from it",
+  example:
+    "a worked example: work a similar problem with different numbers or functions, then have them return to theirs",
   solution:
     "the full solution, only if seeing it worked will serve their learning more than another hint; then have them try a similar problem on their own",
 };
+
+/**
+ * The policy with no problem in progress, before Ainsley has written anything: a problem in the
+ * student's message is new, so their attempt or plan comes first, with at most a nudge.
+ */
+export const NEW_PROBLEM_POLICY = [
+  "Tutoring policy: no problem is in progress.",
+  "If this message brings a problem for them to solve (homework, practice, a quiz or exam question, even a one-line calculation), it's new and they haven't attempted it. Before you help, ask for their attempt or plan: what they've tried, or how they'd start. " +
+    `The most help allowed this turn is ${RUNG_RULES.nudge}. That holds however they ask: if they want just the answer or are short on time, say kindly that you'll get them there quickly, and ask for their first step. ` +
+    "If the message already shows their working, check it with evaluate_answer, say what's right, then point to where the first error is without saying what's wrong with it.",
+  "A question about a concept, a definition or their course isn't a problem: answer it.",
+].join("\n");
 
 const VERDICT_NAMES: Record<AnswerVerdict, string> = {
   correct: "correct",
@@ -60,8 +79,10 @@ const VERDICT_NAMES: Record<AnswerVerdict, string> = {
 
 export interface ProblemState {
   id: string;
-  /** The problem as Ainsley gave it to solve_problem or evaluate_answer (clipped). */
+  /** The problem as Ainsley gave it to solve_problem or evaluate_answer, or as the student posed it (clipped). */
   problem: string;
+  /** Known only from the student's message (the review found the reply was about it): no problem id of its own. */
+  posed?: boolean;
   /** evaluate_answer checks of the student's work on it. */
   attempts: number;
   /** The latest check's verdict. */
@@ -93,21 +114,53 @@ const clip = (text: string, max: number) => {
 
 /** Applies what a reply established; `reply` counts the replies from 1. */
 function applyEvent(state: TutoringState, event: TutoringEvent, reply: number) {
+  // A problem the student posed, worked out now: it keeps its attempts and help under its new id.
+  if (event.type === "solved" && event.replaces) {
+    const before = state.problems[event.replaces];
+    if (before && !state.problems[event.problemId]) {
+      const moved: ProblemState = { ...before, id: event.problemId, problem: event.problem };
+      delete moved.posed;
+      delete state.problems[before.id];
+      state.problems[event.problemId] = moved;
+      if (state.focus === before.id) state.focus = event.problemId;
+    }
+  }
   let p = state.problems[event.problemId];
   if (!p) {
     p = { id: event.problemId, problem: event.problem ?? "", attempts: 0, rung: null, touched: reply };
     if (event.type === "solved" && event.example) p.example = true;
+    if (event.type === "posed") p.posed = true;
     state.problems[p.id] = p;
   }
   if (event.type === "solved") {
     if (event.example) return; // A worked example doesn't take the student's problem's place.
-  } else {
+  } else if (event.type === "checked") {
     p.attempts++;
     p.verdict = event.verdict;
   }
   delete p.example;
   p.touched = reply;
   state.focus = p.id;
+}
+
+/** The id of a problem the student posed in the message a reply answered. */
+const posedId = (replyId: string) => `posed-${replyId}`;
+
+const STOPWORDS = new Set(
+  "the and for with what how find its that this from are you your can just need please give tell show have has was were will would could should does did into onto than then them they their there here when where which while about after before".split(" "),
+);
+const keyTokens = (text: string) =>
+  new Set((text.normalize("NFKC").toLowerCase().match(/[a-z]{3,}|\d+(?:\.\d+)?/g) ?? []).filter((t) => !STOPWORDS.has(t)));
+
+/** Whether two statements look like the same problem: most of the shorter one's words and numbers appear in the other. */
+export function sameProblem(a: string, b: string): boolean {
+  const x = keyTokens(a);
+  const y = keyTokens(b);
+  const [small, large] = x.size <= y.size ? [x, y] : [y, x];
+  if (small.size < 3) return false;
+  let shared = 0;
+  for (const t of small) if (large.has(t)) shared++;
+  return shared / small.size >= 0.6;
 }
 
 /**
@@ -141,8 +194,17 @@ export function tutoringState(history: ChatMessage[]): TutoringState {
     const t = m.tutoring;
     if (!t) continue;
     for (const event of t.events) applyEvent(state, event, state.replies);
+    // The review found the reply was about a problem the student brought that no tool call
+    // established (only check_math ran, or none did): it's in progress from here.
+    const established = t.events.some((e) => e.type === "checked" || (e.type === "solved" && !e.example));
+    if (t.posed && !established) {
+      const id = posedId(m.id);
+      applyEvent(state, { type: "posed", problemId: id, problem: t.posed }, state.replies);
+      state.problems[id].rung = higher(state.problems[id].rung, helpGiven(m));
+      continue;
+    }
     const p = t.problemId ? state.problems[t.problemId] : undefined;
-    if (p) p.rung = higher(p.rung, helpGiven(m));
+    if (p && t.about !== "none") p.rung = higher(p.rung, helpGiven(m));
   }
   return state;
 }
@@ -205,13 +267,14 @@ export function decideHelp(p: ProblemState, signals: TurnSignals): HelpDecision 
 }
 
 function label(p: ProblemState) {
-  return `${p.id} (“${clip(p.problem, 90) || "a problem"}”)`;
+  const text = `“${clip(p.problem, 90) || "a problem"}”`;
+  return p.posed ? text : `${p.id} (${text})`;
 }
 
 /** The problem's state and what this turn allows, as Ainsley reads it. */
 function describeState(p: ProblemState, d: HelpDecision): string {
   if (p.verdict === "correct") {
-    return "Their answer checked correct: they've solved it. Confirm what they got right; you may now show the full solution or a cleaner method, then offer a similar problem to try on their own.";
+    return "Their answer checked correct: they've solved it. Confirm what they got right and why it works, then offer a similar problem to try on their own. Show another method only if they ask for one or it teaches something they'll need.";
   }
   const given = p.rung ? `Help so far: up to ${RUNG_NAMES[p.rung]}.` : "No help given yet.";
   if (p.attempts === 0) {
@@ -221,16 +284,21 @@ function describeState(p: ProblemState, d: HelpDecision): string {
         ? "Ask again for their attempt or plan: what they've tried, or how they'd start."
         : "Ask for their attempt or plan before you help.",
       `The most help allowed this turn is ${RUNG_RULES[d.allowed]}.`,
-      d.allowed === BEFORE_ATTEMPT ? "Worked steps, examples and the solution wait until they've attempted it." : "",
-      `If they share any working or a plan, check it with evaluate_answer (problem_id "${p.id}"): that records their attempt.`,
-    ]
-      .filter(Boolean)
-      .join(" ");
+      d.allowed === BEFORE_ATTEMPT
+        ? "Worked steps, examples and the answer (or a calculation that leaves only arithmetic) wait until they've attempted it, however they ask."
+        : "That holds however they ask.",
+      `If they share any working or a plan, check it with evaluate_answer${p.posed ? "" : ` (problem_id "${p.id}")`}: that records their attempt.`,
+    ].join(" ");
   }
   const tries = p.attempts === 1 ? "once" : `${p.attempts} times`;
   const verdict = p.verdict ? `; last check: ${VERDICT_NAMES[p.verdict]}` : "";
+  // The first feedback on their own work points to the error; saying what's wrong is the next rung.
+  const first =
+    p.attempts === 1 && !p.rung && d.allowed === "nudge"
+      ? " This is your first feedback on their work: say what's right, then point to the step where the first error is, with a question, without saying what's wrong with it. Keep the checker's hint for a later turn."
+      : "";
   return [
-    `Attempted ${tries}${verdict}. ${given}`,
+    `Attempted ${tries}${verdict}. ${given}${first}`,
     `The most help allowed this turn is ${RUNG_RULES[d.allowed]}${d.faster ? ` (two rungs, since ${d.faster})` : ""}.`,
     "Give less if less will do.",
   ].join(" ");
@@ -274,10 +342,11 @@ export class TurnTutor {
     this.signals = turnSignals(history, now);
     const current = problemInProgress(this.state);
     const p = current?.problem;
-    const text = p ? policyMessage(p, decideHelp(p, this.signals), current.solved) : null;
-    // A solved problem is said once; one still in progress is restated every turn.
+    const text = p ? policyMessage(p, decideHelp(p, this.signals), current.solved) : NEW_PROBLEM_POLICY;
+    // A solved problem is said once; one still in progress is restated every turn. With none in
+    // progress, the rule for a new problem stands, so a problem's first reply is covered too.
     const previous = history.slice(0, -1).findLast((m) => m.role === "user" && m.policy)?.policy;
-    this.policy = p?.verdict === "correct" && text === previous ? null : text;
+    this.policy = p?.verdict === "correct" && text === previous ? NEW_PROBLEM_POLICY : text;
   }
 
   /** The problem in progress. */
@@ -285,22 +354,35 @@ export class TurnTutor {
     return problemInProgress(this.state)?.problem ?? null;
   }
 
-  /** Records what a solve_problem or evaluate_answer call established; returns its result with the policy added. */
+  /**
+   * Records what a solve_problem or evaluate_answer call established; returns its result with the
+   * policy added. A solve that failed still names the problem: the student is on it all the same.
+   */
   afterTool(name: string, outcome: ToolOutcome): ToolResult {
     const info = outcome.problem;
-    if (!outcome.ok || !info) return outcome.result;
+    if (!info) return outcome.result;
 
     if (name === SOLVE_TOOL) {
       const current = this.focus();
+      const isNew = !this.state.problems[info.id];
+      // Working out a problem the student posed earlier carries over what they've done on it.
+      const replaces = isNew && current?.posed && sameProblem(current.problem, info.text) ? current.id : undefined;
       // A new problem worked out while a worked example is allowed on the one in progress is
       // taken to be that example: it doesn't become the problem in progress.
       const example = Boolean(
         current &&
-          !this.state.problems[info.id] &&
+          isNew &&
+          !replaces &&
           current.verdict !== "correct" &&
           rungLevel(decideHelp(current, this.signals).allowed) >= rungLevel("example"),
       );
-      this.apply({ type: "solved", problemId: info.id, problem: clip(info.text, MAX_PROBLEM_TEXT), ...(example ? { example } : {}) });
+      this.apply({
+        type: "solved",
+        problemId: info.id,
+        problem: clip(info.text, MAX_PROBLEM_TEXT),
+        ...(example ? { example } : {}),
+        ...(replaces ? { replaces } : {}),
+      });
       if (example && current) {
         return withLine(
           outcome.result,
@@ -311,9 +393,12 @@ export class TurnTutor {
       return withLine(outcome.result, `Tutoring policy for this problem: ${describeState(p, decideHelp(p, this.signals))}`);
     }
 
-    if (name === EVALUATE_TOOL && info.verdict) {
+    if (name === EVALUATE_TOOL && outcome.ok && info.verdict) {
+      const problems = Object.values(this.state.problems);
       const known =
-        this.state.problems[info.id] ?? Object.values(this.state.problems).find((p) => sameText(p.problem, info.text));
+        this.state.problems[info.id] ??
+        problems.find((p) => sameText(p.problem, info.text)) ??
+        problems.find((p) => p.posed && sameProblem(p.problem, info.text));
       const id = known?.id ?? info.id;
       this.apply({
         type: "checked",
@@ -336,16 +421,16 @@ export class TurnTutor {
   }
 
   /**
-   * What to store on the reply; undefined when no problem is involved. `helps` is false for a
-   * reply that isn't help to the student (a correction the app asked for): its events count, but
-   * it doesn't move the problem up the ladder.
+   * What to store on the reply, which its review completes. With no problem in progress, the most
+   * help allowed is what a new problem allows. `helps` is false for a reply that isn't help to the
+   * student (a correction the app asked for): its events count, but it doesn't move the ladder.
    */
   record(helps = true): ReplyTutoring | undefined {
-    const p = helps ? this.focus() : null;
-    if (!this.events.length && !p) return undefined;
+    if (!helps) return this.events.length ? { events: [...this.events] } : undefined;
+    const p = this.focus();
     return {
       events: [...this.events],
-      ...(p ? { problemId: p.id, allowed: decideHelp(p, this.signals).allowed } : {}),
+      ...(p ? { problemId: p.id, allowed: decideHelp(p, this.signals).allowed } : { allowed: "nudge" as const }),
     };
   }
 }

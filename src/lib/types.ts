@@ -259,12 +259,17 @@ export interface MathAudit {
 /** A rung of the help ladder, from least help to most: see HELP_RUNGS. */
 export type HelpRung = "nudge" | "hint" | "step" | "example" | "solution";
 
-/** Something a reply's tool calls established about a problem. */
+/** Something a reply established about a problem. */
 export type TutoringEvent =
-  /** solve_problem worked it out. `example`: a similar problem for a worked example, not one the student is on. */
-  | { type: "solved"; problemId: string; problem: string; example?: boolean }
+  /**
+   * solve_problem worked it out (or tried to). `example`: a similar problem for a worked example, not
+   * one the student is on. `replaces`: the problem the student posed earlier that this turned out to be.
+   */
+  | { type: "solved"; problemId: string; problem: string; example?: boolean; replaces?: string }
   /** evaluate_answer checked the student's work on it: an attempt. */
-  | { type: "checked"; problemId: string; verdict: AnswerVerdict; problem?: string };
+  | { type: "checked"; problemId: string; verdict: AnswerVerdict; problem?: string }
+  /** The review found the reply was about a problem the student brought (folded from ReplyTutoring.posed, not stored). */
+  | { type: "posed"; problemId: string; problem: string };
 
 /** What the tutoring policy recorded for one of Ainsley's replies; the per-problem state is folded from these. */
 export interface ReplyTutoring {
@@ -280,13 +285,22 @@ export interface ReplyTutoring {
   used?: HelpRung | null;
   /** The reply stated the problem's final answer before the student had attempted it. */
   leak?: boolean;
+  /**
+   * From the review: whether the reply was about the problem in progress, a new one the student
+   * brought, or no problem they're solving; and, for a new one, the problem as they gave it.
+   */
+  about?: "this" | "new" | "none";
+  posed?: string;
 }
 
 /** Result of POST /api/review. */
 export interface ReviewResponse {
-  /** False when the reviewer couldn't rate the reply (then `used` is unset). */
+  /** False when the reviewer couldn't rate the reply (then `used` and `about` are unset). */
   reviewed: boolean;
   used?: HelpRung | null;
+  about?: "this" | "new" | "none";
+  /** For a new problem: the problem as the student gave it. */
+  problem?: string;
   leak: boolean;
   error?: string;
 }

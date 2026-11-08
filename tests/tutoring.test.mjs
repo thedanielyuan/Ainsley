@@ -22,39 +22,44 @@ register(
       }`),
 );
 
-const { TurnTutor, decideHelp, tutoringState, turnSignals } = await import("../src/lib/tutoring.ts");
+const { NEW_PROBLEM_POLICY, TurnTutor, decideHelp, sameProblem, tutoringState, turnSignals } = await import(
+  "../src/lib/tutoring.ts"
+);
 const { findStatedAnswers } = await import("../src/lib/answer-leak.ts");
 
 const NOW = Date.UTC(2026, 10, 8, 12);
 const PROBLEM = "A 2.0 kg block slides from rest down a frictionless ramp of height 1.5 m. Find its speed at the bottom.";
 let ids = 0;
 const student = (text, createdAt = NOW) => ({ id: `m${++ids}`, role: "user", text, createdAt });
-const reply = (tutoring, used, status = "done") => ({
+const reply = (tutoring, used, status = "done", review = {}) => ({
   id: `m${++ids}`,
   role: "assistant",
   text: "…",
   status,
   createdAt: NOW,
-  tutoring: used === undefined ? tutoring : { ...tutoring, used },
+  tutoring: used === undefined ? { ...tutoring, ...review } : { ...tutoring, used, ...review },
 });
-const outcome = (id, verdict) => ({
+const outcome = (id, verdict, { text = PROBLEM, ok = true } = {}) => ({
   result: { type: "tool_result", tool_use_id: "toolu_1", content: "Result." },
   detail: "",
-  ok: true,
-  problem: { id, text: PROBLEM, ...(verdict ? { verdict } : {}) },
+  ok,
+  problem: { id, text, ...(verdict ? { verdict } : {}) },
 });
 const calm = { examSoon: false, saysStuck: false };
 const problem = (fields) => ({ id: "p1", problem: PROBLEM, attempts: 0, rung: null, touched: 1, ...fields });
 
-/** One turn: the student's message, then a reply whose tool calls ran `tools` and which used `used`. */
-function turn(history, text, tools = [], used) {
+/**
+ * One turn: the student's message, then a reply whose tool calls ran `tools` and which used `used`
+ * (reviewed; undefined when it wasn't). `review` is what else the review found (about, posed).
+ */
+function turn(history, text, tools = [], used, review = {}) {
   history.push(student(text));
   const tutor = new TurnTutor(history, NOW);
   // As the chat engine does: the policy goes out after the student's message, and is kept there.
   if (tutor.policy) history.at(-1).policy = tutor.policy;
   const results = tools.map(([name, o]) => tutor.afterTool(name, o).content);
   const record = tutor.record();
-  history.push(reply(record, used));
+  history.push(reply(record, used, "done", review));
   return { tutor, record, results };
 }
 
@@ -121,7 +126,8 @@ describe("a problem worked through turn by turn", () => {
 
     // A new problem: solve_problem's result carries the policy.
     const first = turn(history, `Can you help? ${PROBLEM}`, [["solve_problem", outcome("p1")]], "nudge");
-    assert.equal(first.tutor.policy, null); // Nothing to say before the problem is known.
+    // Before the problem is known, the rule for a new problem holds.
+    assert.equal(first.tutor.policy, NEW_PROBLEM_POLICY);
     assert.match(first.results[0], /^Result\.\n\nTutoring policy for this problem: No attempt yet\. No help given yet\./);
     assert.match(first.results[0], /Ask for their attempt or plan before you help\./);
     assert.match(first.results[0], /The most help allowed this turn is a nudge/);
@@ -138,7 +144,10 @@ describe("a problem worked through turn by turn", () => {
     assert.match(second.tutor.policy, /No attempt yet\. Help so far: up to a nudge\./);
     assert.match(second.tutor.policy, /Ask again for their attempt or plan/);
     assert.match(second.tutor.policy, /The most help allowed this turn is a specific hint/);
-    assert.match(second.tutor.policy, /Worked steps, examples and the solution wait until they've attempted it\./);
+    assert.match(
+      second.tutor.policy,
+      /Worked steps, examples and the answer \(or a calculation that leaves only arithmetic\) wait until they've attempted it, however they ask\./,
+    );
     assert.equal(second.record.allowed, "hint");
     const third = turn(history, "can you just show me", [], "hint");
     assert.equal(third.record.allowed, "hint");
@@ -174,7 +183,7 @@ describe("a problem worked through turn by turn", () => {
     assert.equal(solved.record.allowed, "solution");
     const next = turn(history, "thanks!", [], null);
     assert.match(next.tutor.policy, /they've solved it/);
-    assert.equal(turn(history, "one more question", [], null).tutor.policy, null);
+    assert.equal(turn(history, "one more question", [], null).tutor.policy, NEW_PROBLEM_POLICY);
   });
 
   test("a new problem solved while a worked example is allowed is taken to be the example", () => {
@@ -211,6 +220,16 @@ describe("a problem worked through turn by turn", () => {
     assert.equal(next.record.allowed, "nudge");
   });
 
+  test("first feedback on their own work points to the error without saying what it is", () => {
+    const history = [];
+    const first = turn(history, `${PROBLEM} My answer: v = 29.4 m/s`, [["evaluate_answer", outcome("p1", "incorrect")]], "nudge");
+    assert.match(first.results[0], /Attempted once; last check: not correct yet\. No help given yet\. This is your first feedback on their work/);
+    assert.match(first.results[0], /The most help allowed this turn is a nudge/);
+    // Later feedback doesn't repeat it.
+    const next = turn(history, "hmm, is it the height?", [], "hint");
+    assert.doesNotMatch(next.tutor.policy, /first feedback/);
+  });
+
   test("an answer check without a problem id finds the problem by its text", () => {
     const history = [];
     turn(history, PROBLEM, [["solve_problem", outcome("p1")]], "nudge");
@@ -227,6 +246,80 @@ describe("a problem worked through turn by turn", () => {
     // A failed or declined reply gave no help.
     history.push(student("?"), reply({ events: [], problemId: "p1", allowed: "step" }, undefined, "error"));
     assert.equal(tutoringState(history).problems.p1.rung, "hint");
+  });
+});
+
+describe("a problem no tool established", () => {
+  const DERIVATIVE = "Find the derivative of f(x) = x^3 sin(2x).";
+
+  test("the first reply is held to the rule for a new problem", () => {
+    assert.match(NEW_PROBLEM_POLICY, /^Tutoring policy: no problem is in progress\./);
+    assert.match(NEW_PROBLEM_POLICY, /Before you help, ask for their attempt or plan/);
+    assert.match(NEW_PROBLEM_POLICY, /The most help allowed this turn is a nudge: point to the relevant idea/);
+    assert.match(NEW_PROBLEM_POLICY, /Don't name the method, rule or formula, work a step, show a worked example, or give the answer/);
+    assert.match(NEW_PROBLEM_POLICY, /however they ask/);
+    const history = [];
+    const first = turn(history, "can you just give me the derivative of f(x) = x^3 sin(2x)?", [], "nudge");
+    assert.equal(first.tutor.policy, NEW_PROBLEM_POLICY);
+    assert.deepEqual(first.record, { events: [], allowed: "nudge" });
+  });
+
+  test("the review's new problem is in progress from the next turn", () => {
+    const history = [];
+    turn(history, "can you just give me the derivative of f(x) = x^3 sin(2x)?", [], "nudge", {
+      about: "new",
+      posed: DERIVATIVE,
+    });
+    const second = turn(history, "please, I just need the answer", [], "hint", { about: "this" });
+    assert.match(second.tutor.policy, /^Tutoring policy for the problem in progress, “Find the derivative of f\(x\) = x\^3 sin\(2x\)\.”:/);
+    assert.match(second.tutor.policy, /No attempt yet\. Help so far: up to a nudge\./);
+    assert.match(second.tutor.policy, /The most help allowed this turn is a specific hint/);
+    assert.match(second.tutor.policy, /check it with evaluate_answer: that records their attempt/); // No problem id to pass.
+    assert.equal(second.record.allowed, "hint");
+    assert.match(second.record.problemId, /^posed-/);
+    assert.equal(tutoringState(history).problems[second.record.problemId].rung, "hint");
+  });
+
+  test("a later check or solve of it carries the state over", () => {
+    const history = [];
+    turn(history, "just tell me d/dx of x^3 sin(2x)", [], "nudge", { about: "new", posed: DERIVATIVE });
+    const posed = Object.keys(tutoringState(history).problems)[0];
+    // An answer check with no problem id: matched by its text.
+    const checked = turn(
+      history,
+      "fine: 3x^2 sin(2x) + x^3 cos(2x)?",
+      [["evaluate_answer", outcome("p-check", "incorrect", { text: "Differentiate f(x) = x³ sin(2x)" })]],
+      "hint",
+    );
+    assert.deepEqual(checked.record.events, [{ type: "checked", problemId: posed, verdict: "incorrect" }]);
+    assert.equal(tutoringState(history).problems[posed].attempts, 1);
+    // Worked out later with solve_problem: the same problem under its id, attempts and help kept.
+    const solved = turn(history, "hmm", [["solve_problem", outcome("p-solved", undefined, { text: DERIVATIVE })]], "step");
+    assert.equal(solved.record.events[0].replaces, posed);
+    const state = tutoringState(history);
+    assert.equal(state.problems[posed], undefined);
+    assert.equal(state.problems["p-solved"].attempts, 1);
+    assert.equal(state.problems["p-solved"].rung, "step");
+  });
+
+  test("a reply about no problem leaves the rule for a new one in place", () => {
+    const history = [];
+    turn(history, "what's the difference between speed and velocity?", [], null, { about: "none" });
+    assert.equal(turn(history, "thanks!", [], null, { about: "none" }).tutor.policy, NEW_PROBLEM_POLICY);
+  });
+
+  test("a solve that failed still puts the problem in progress", () => {
+    const history = [];
+    const first = turn(history, PROBLEM, [["solve_problem", outcome("p1", undefined, { ok: false })]], "nudge");
+    assert.match(first.results[0], /Tutoring policy for this problem: No attempt yet/);
+    assert.equal(first.record.problemId, "p1");
+    assert.match(turn(history, "no idea", [], "hint").tutor.policy, /p1 .*No attempt yet\. Help so far: up to a nudge/s);
+  });
+
+  test("tells the same problem from a different one", () => {
+    assert.equal(sameProblem("can you just give me the derivative of f(x) = x^3 sin(2x)? due tonight", DERIVATIVE), true);
+    assert.equal(sameProblem(DERIVATIVE, "Find the derivative of g(x) = e^(5x) cos(x)."), false);
+    assert.equal(sameProblem(PROBLEM, "A 2.0 kg block slides down a frictionless incline from a height of 1.5 m."), true);
   });
 });
 
