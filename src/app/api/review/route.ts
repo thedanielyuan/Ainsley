@@ -12,7 +12,7 @@ const MAX_KNOWN = 100_000;
 /**
  * Reviews one of Ainsley's replies for the tutoring policy (src/lib/tutoring.ts): whether it was
  * about the problem in progress, a new problem the student brought, or neither, and the most help
- * it gave (Claude Haiku 5.5, src/lib/server/help-review.ts); and whether it stated the final answer
+ * it gave (Ainsley AI's fast tier, src/lib/server/help-review.ts); and whether it stated the final answer
  * before the student had attempted the problem, found by comparing its math with the saved answers'
  * sympy forms (src/lib/answer-leak.ts) and by the reviewer. Leaks and help beyond what the policy
  * allowed are logged in development as metrics; nothing is blocked.

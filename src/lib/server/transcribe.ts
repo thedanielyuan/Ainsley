@@ -2,17 +2,17 @@ import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import { PDFDocument } from "pdf-lib";
 import type { MaterialPage } from "@/lib/types";
-import { getClient } from "./anthropic";
+import { AINSLEY_AI, getClient } from "./ainsley-ai";
 import { UnsupportedFileError } from "./extract";
 
 /**
  * Reads the text of photos and scanned PDFs, which have no text layer, so search, module
- * retrieval and citations can reach them. Claude Haiku 5.5 writes out each page as it is written
+ * retrieval and citations can reach them. Ainsley AI's fast tier writes out each page as written
  * (handwriting included, math as LaTeX, figures named in brackets). A long scan is split into
  * short PDFs that are read a few at a time.
  */
 
-const MODEL = "claude-haiku-5-5";
+const MODEL = AINSLEY_AI.fast;
 const PAGES_PER_PART = 8;
 const PARALLEL_PARTS = 4;
 // Thinking counts toward max_tokens, and a part can hold eight dense pages.
@@ -70,7 +70,7 @@ async function read(
     )
     .finalMessage();
 
-  // Haiku 5.5 has no server-side fallback: a declined page is left without text.
+  // The fast tier has no server-side fallback: a declined page is left without text.
   if (message.stop_reason === "refusal") return null;
   if (message.stop_reason === "max_tokens") throw new Error("The transcription ran out of room before finishing.");
   const raw = message.content.filter((b): b is Anthropic.TextBlock => b.type === "text").at(-1)?.text;

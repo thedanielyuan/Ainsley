@@ -116,7 +116,7 @@ export async function reply(app, { conversationId, input, correction, signal }) 
     }
 
     if (streamError || !done) {
-      // The Claude API failing or the connection dropping says nothing about Ainsley: retry the
+      // The API failing or the connection dropping says nothing about Ainsley: retry the
       // request, which is safe because nothing from it joined the transcript.
       if (streamError && (TRANSIENT.test(streamError) || DROPPED.test(streamError)) && retries < MAX_RETRIES) {
         retries++;
@@ -250,8 +250,8 @@ function shownReply(app, r, kind) {
     status: r.status,
     tools: r.tools,
     audit: r.audit ?? null,
-    // What the student sees beside the reply: "Math checked", "Not verified", or nothing.
-    badge: r.audit ? app.auditLabel(r.audit.status) : null,
+    // What the student sees beside the reply: "Not verified", or nothing.
+    badge: r.audit ? app.auditBadge(r.audit.status) : null,
     tutoring: r.message.tutoring ?? null,
     policy: kind === "reply" ? (r.history.at(-1)?.policy ?? null) : null,
     ms: r.ms,

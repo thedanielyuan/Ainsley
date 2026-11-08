@@ -1,4 +1,4 @@
-import { describeError } from "@/lib/server/anthropic";
+import { describeError } from "@/lib/server/ainsley-ai";
 import { rerankPassages, type Passage } from "@/lib/server/rerank";
 
 const MAX_QUERY = 2_000;

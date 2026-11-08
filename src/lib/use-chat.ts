@@ -48,7 +48,7 @@ const MAX_STEPS = 12;
 /**
  * A thought is named once this much of its reasoning summary has arrived (or when it ends, if
  * sooner), and a long stretch of thinking becomes a new step after this much more, so the
- * timeline keeps moving while Ainsley thinks, as Grok's does.
+ * timeline keeps moving while Ainsley thinks.
  */
 const NAME_THOUGHT_AFTER = 400;
 const NEW_THOUGHT_AFTER = 1600;

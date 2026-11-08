@@ -199,7 +199,7 @@ process.once("SIGINT", () => {
 
 console.log(
   `Ainsley evals: ${jobs.length} case${jobs.length === 1 ? "" : "s"} (${suites.join(", ")}) against ${args.url}, ${concurrency} at a time.` +
-    " Each case calls Claude, so this takes a while and costs real money.\n",
+    " Each case calls Ainsley AI's models, so this takes a while and costs real money.\n",
 );
 
 let finished = 0;

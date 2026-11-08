@@ -1,11 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { AINSLEY_SYSTEM_PROMPT } from "@/lib/ainsley-prompt";
-import { describeError, getClient } from "@/lib/server/anthropic";
+import { AINSLEY_AI, describeError, getClient } from "@/lib/server/ainsley-ai";
 import { toReplayContent } from "@/lib/server/replay";
 import { TOOLS } from "@/lib/server/tools";
 import type { ApiBlock, StreamEvent } from "@/lib/types";
 
-const MODEL = "claude-opus-5-5";
+const MODEL = AINSLEY_AI.reasoning;
 // Thinking counts toward max_tokens, so leave room for it as well as the reply.
 const MAX_TOKENS = 64_000;
 const MAX_MESSAGES = 2_000;
@@ -61,12 +61,12 @@ export async function POST(req: Request) {
             tools: TOOLS,
             messages,
             ...(container ? { container } : {}),
-            // Opus 5.5 always thinks; effort is the dial (its default is medium).
+            // The reasoning tier always thinks; effort is the dial (its default is medium).
             output_config: { effort: "high" },
             thinking: {
               type: "adaptive",
-              // Summaries let the browser name each step of Ainsley's thinking for the student,
-              // the way Grok shows its own (/api/thought). The summaries themselves are never
+              // Summaries let the browser name each step of Ainsley's thinking for the student
+              // (/api/thought). The summaries themselves are never
               // shown: a tutor's private plan often contains the answer it is deliberately
               // guiding the student toward, so a step's name says what Ainsley is doing, not
               // what it concluded.
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
             },
             // Cache the growing conversation between turns (5 minutes), after the shared entry above.
             cache_control: { type: "ephemeral" },
-            // If a safety classifier declines, retry on Anthropic's recommended model.
+            // If a safety classifier declines, retry on the fallback model the API recommends.
             fallbacks: "default",
             betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
           },

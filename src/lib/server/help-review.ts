@@ -2,18 +2,18 @@ import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import { HELP_RUNGS } from "@/lib/tutoring";
 import type { HelpRung, SolutionAnswer } from "@/lib/types";
-import { getClient } from "./anthropic";
+import { AINSLEY_AI, getClient } from "./ainsley-ai";
 
 /**
- * Reviews one of Ainsley's replies for the tutoring policy (src/lib/tutoring.ts): Claude Haiku 5.5
- * says whether the reply was about the problem in progress, a new problem the student brought, or no
+ * Reviews one of Ainsley's replies for the tutoring policy (src/lib/tutoring.ts): Ainsley AI's
+ * fast tier says whether the reply was about the problem in progress, a new problem the student brought, or no
  * problem they're solving; rates the most help it gave toward solving that problem, as a rung of
  * the help ladder; and says whether it stated the final answer. The policy uses the rung so help
  * rises one rung a turn, and a new problem so its next turns are held to the policy even when no
  * tool established it; the rest is measured (/api/review).
  */
 
-const MODEL = "claude-haiku-5-5";
+const MODEL = AINSLEY_AI.fast;
 // Thinking counts toward max_tokens; the answer itself is short.
 const MAX_TOKENS = 8_000;
 
@@ -101,7 +101,7 @@ export async function reviewHelp(
     },
     { signal },
   );
-  // Haiku 5.5 has no server-side fallback: a reply it declines to review counts as unreviewed.
+  // The fast tier has no server-side fallback: a reply it declines to review counts as unreviewed.
   if (message.stop_reason === "refusal") return null;
   const raw = message.content.filter((b): b is Anthropic.TextBlock => b.type === "text").at(-1)?.text;
   if (!raw || message.stop_reason === "max_tokens") throw new Error("The review didn't finish.");

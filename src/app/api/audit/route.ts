@@ -1,4 +1,4 @@
-import { describeError } from "@/lib/server/anthropic";
+import { describeError } from "@/lib/server/ainsley-ai";
 import { parseAttachments } from "@/lib/server/attachments";
 import { auditReply, type AuditInput } from "@/lib/server/audit";
 import type { CheckResponse } from "@/lib/types";

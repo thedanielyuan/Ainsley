@@ -1,12 +1,12 @@
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
-import { getClient, missingKeyMessage } from "@/lib/server/anthropic";
+import { getClient, missingKeyMessage, withoutModelNames } from "@/lib/server/ainsley-ai";
 import { extractFile, UnsupportedFileError } from "@/lib/server/extract";
 import type { ProcessedUpload } from "@/lib/types";
 
 const MAX_BYTES = 32 * 1024 * 1024;
 
 /**
- * Reads an uploaded file: extracts its text (for search and for formats Claude can't open
+ * Reads an uploaded file: extracts its text (for search and for formats Ainsley AI can't open
  * directly) and stores PDFs and images with the Files API, so chats can reference them by
  * id instead of re-sending the bytes on every turn.
  */
@@ -81,11 +81,11 @@ export async function DELETE(req: Request) {
 
 function describeError(err: unknown) {
   if (err instanceof Anthropic.AuthenticationError) {
-    return "Ainsley couldn't authenticate with the Claude API. Check ANTHROPIC_API_KEY in .env.local.";
+    return "Ainsley couldn't connect to Ainsley AI: the API key in .env.local was rejected.";
   }
   if (err instanceof Anthropic.RateLimitError) return "Too many uploads right now. Wait a moment and try again.";
-  if (err instanceof Anthropic.BadRequestError) return `The file was rejected: ${err.message}`;
-  if (err instanceof Anthropic.APIConnectionError) return "Couldn't reach the Claude API. Check your connection.";
-  if (err instanceof Anthropic.APIError) return `Claude API error${err.status ? ` (${err.status})` : ""}. Try again.`;
+  if (err instanceof Anthropic.BadRequestError) return `The file was rejected: ${withoutModelNames(err.message)}`;
+  if (err instanceof Anthropic.APIConnectionError) return "Couldn't reach Ainsley AI. Check your connection.";
+  if (err instanceof Anthropic.APIError) return `Ainsley AI ran into an error${err.status ? ` (${err.status})` : ""}. Try again.`;
   return missingKeyMessage() ?? "Something went wrong while reading this file.";
 }

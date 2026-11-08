@@ -33,7 +33,7 @@ import type { Course } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { usePopover, type PopoverPlacement } from "./menu";
 
-/** The icons a course can have, like ChatGPT's project icons. The first is the default. */
+/** The icons a course can have. The first is the default. */
 export const COURSE_ICONS: Array<{ key: string; label: string; Icon: LucideIcon }> = [
   { key: "folder", label: "Folder", Icon: Folder },
   { key: "book", label: "Book", Icon: BookOpen },

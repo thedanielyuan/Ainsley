@@ -39,11 +39,11 @@ const reply = (tutoring, used, status = "done", review = {}) => ({
   createdAt: NOW,
   tutoring: used === undefined ? { ...tutoring, ...review } : { ...tutoring, used, ...review },
 });
-const outcome = (id, verdict, { text = PROBLEM, ok = true } = {}) => ({
+const outcome = (id, verdict, { text = PROBLEM, ok = true, purpose } = {}) => ({
   result: { type: "tool_result", tool_use_id: "toolu_1", content: "Result." },
   detail: "",
   ok,
-  problem: { id, text, ...(verdict ? { verdict } : {}) },
+  problem: { id, text, ...(verdict ? { verdict } : {}), ...(purpose ? { purpose } : {}) },
 });
 const calm = { examSoon: false, saysStuck: false };
 const problem = (fields) => ({ id: "p1", problem: PROBLEM, attempts: 0, rung: null, touched: 1, ...fields });
@@ -197,6 +197,43 @@ describe("a problem worked through turn by turn", () => {
     assert.deepEqual(example.record.events, [{ type: "solved", problemId: "p2", problem: PROBLEM, example: true }]);
     // The student's problem stays in progress.
     assert.match(turn(history, "ok", [], null).tutor.policy, /p1/);
+  });
+
+  test("a practice question Ainsley sets isn't taken to be a worked example", () => {
+    const history = [];
+    turn(history, PROBLEM, [["solve_problem", outcome("p1")]], "nudge");
+    turn(history, "here's my try", [["evaluate_answer", outcome("p1", "incorrect")]], "hint");
+    turn(history, "still stuck", [], "step"); // allowed: example (stuck after a real attempt)
+    const set = turn(history, "give me one to try myself", [["solve_problem", outcome("p2", undefined, { purpose: "practice" })]], null);
+    assert.doesNotMatch(set.results[0], /taken to be that similar problem/);
+    assert.match(set.results[0], /It's a practice question you set: its answer and any working wait for theirs, however they ask/);
+    assert.equal(set.record.problemId, "p2");
+    assert.deepEqual(set.record.events, [{ type: "solved", problemId: "p2", problem: PROBLEM, practice: true }]);
+  });
+
+  test("practice questions wait for the student's answers, which get marked", () => {
+    const history = [];
+    const set = turn(history, "can you give me some practice on energy?", [["solve_problem", outcome("p1", undefined, { purpose: "practice" })]], null);
+    assert.match(set.tutor.policy, /Practice questions you set come without their answers or any working, however they ask/);
+    assert.match(set.results[0], /It's a practice question you set/);
+    assert.match(set.results[0], /The most help allowed this turn is a nudge/);
+    // Next turn, it's in progress and still unanswered.
+    const ask = turn(history, "can you just put the answer at the bottom?", [], null);
+    assert.match(ask.tutor.policy, /It's a practice question you set: its answer and any working wait for theirs/);
+    // Their answer is marked like any attempt.
+    const marked = turn(history, "v = 5.4 m/s", [["evaluate_answer", outcome("p1", "incorrect")]], null);
+    assert.match(marked.results[0], /this check records their attempt at p1/);
+    assert.match(marked.results[0], /first feedback on their work/);
+  });
+
+  test("a problem the student is working on is never taken to be the example", () => {
+    const history = [];
+    turn(history, PROBLEM, [["solve_problem", outcome("p1")]], "nudge");
+    turn(history, "here's my try", [["evaluate_answer", outcome("p1", "incorrect")]], "hint");
+    turn(history, "still stuck", [], "step");
+    const next = turn(history, "new one: integrate x e^x", [["solve_problem", outcome("p2", undefined, { purpose: "guide" })]], "nudge");
+    assert.equal(next.record.problemId, "p2");
+    assert.equal(next.record.allowed, "nudge");
   });
 
   test("after a detour, the problem they left is in progress again", () => {

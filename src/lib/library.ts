@@ -279,7 +279,7 @@ function removeMaterialRecords(list: Material[]) {
     materials: Object.fromEntries(Object.entries(s.materials).filter(([id]) => !ids.has(id))),
   }));
   persist(removeMaterials([...ids]));
-  // Remove the copies on Anthropic's side too. Chats that referenced them replay a
+  // Remove the copies stored with the Files API too. Chats that referenced them replay a
   // placeholder instead (see chat-client.ts).
   for (const m of list) {
     if (m.fileId) {

@@ -1,5 +1,5 @@
 import { parseEvaluateInput } from "@/lib/answer-check";
-import { describeError } from "@/lib/server/anthropic";
+import { describeError } from "@/lib/server/ainsley-ai";
 import { parseAttachments } from "@/lib/server/attachments";
 import { checkedConcepts, evaluateAnswer, formatAssessment } from "@/lib/server/evaluate";
 import { parseSolution } from "@/lib/solution";

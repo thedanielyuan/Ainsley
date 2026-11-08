@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 /*
- * Ainsley's palette. Backgrounds follow Claude's (dark by default, light on request): the chat on
- * #191919 with a lighter #1f1f1f sidebar and a #303030 composer in dark mode; white with a #fafafa
- * sidebar in light mode. The accent is the student's choice in Settings → Appearance. `ink` is the
- * overlay color for hovers and tints: white on dark, black on light. Theme and accent are
- * attributes on <html>, set before the first paint by the script in app/layout.tsx and kept in
- * sync by AppearanceSync.
+ * Ainsley's palette. Backgrounds are dark by default, light on request: the chat on #191919 with a
+ * lighter #1f1f1f sidebar and a #303030 composer in dark mode; white with a #fafafa sidebar in
+ * light mode. The accent is the student's choice in Settings → Appearance. `ink` is the overlay
+ * color for hovers and tints: white on dark, black on light. Theme and accent are attributes on
+ * <html>, set before the first paint by the script in app/layout.tsx and kept in sync by
+ * AppearanceSync.
  */
 @theme {
   --color-bg: #191919;
@@ -264,28 +264,61 @@ body {
 }
 
 /* ---------- Work timeline ----------
- * The spinner on the "Working for 12s" row above a reply, like Grok's: a disc with a notch
- * turning in it. */
-.work-spinner {
-  display: block;
-  width: 14px;
-  height: 14px;
-  border-radius: 9999px;
-  background: conic-gradient(transparent 0 25%, var(--color-fg) 25% 100%);
-  animation: work-spin 1s linear infinite;
+ * Ainsley's mark at work, on the "Working for 12s" row above a reply (WorkingMark). The mark sits
+ * faint; every 2s a light glides up its left side, over the top and down the right, then rests.
+ * As the light crests the top, the dot at the mark's heart sparks: it brightens and swells in the
+ * accent, then settles. As on "study", only the spark carries the accent. */
+.working-mark-track {
+  opacity: 0.3;
 }
 
-@keyframes work-spin {
-  to {
-    transform: rotate(360deg);
+.working-mark-light {
+  stroke: var(--color-fg);
+  stroke-dasharray: 0.34 1.2;
+  stroke-dashoffset: 0.34;
+  animation: working-light 2s cubic-bezier(0.55, 0.06, 0.45, 0.94) infinite;
+}
+
+.working-mark-spark {
+  fill: var(--accent-soft);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: working-spark 2s ease-in-out infinite;
+}
+
+/* The light enters below the left foot and leaves below the right one (the path is 1 long). */
+@keyframes working-light {
+  0% {
+    stroke-dashoffset: 0.34;
+  }
+  70%,
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+
+@keyframes working-spark {
+  0%,
+  18% {
+    opacity: 0.35;
+    transform: scale(0.7);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  66%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.7);
   }
 }
 
 /* ---------- Working chat title ----------
- * How Claude marks a chat that is still answering in the background: no dot, just its title
- * shimmering. Following claude.ai's ShimmerText, a soft bell-shaped band of a dimmer grey
- * (lighter grey in light mode) sweeps left to right across the words every 3s: it rests, glides
- * from just before the title to just past it, and rests again. */
+ * How a chat that is still answering in the background is marked: no dot, just its title
+ * shimmering. A soft bell-shaped band of a dimmer grey (lighter grey in light mode) sweeps left to
+ * right across the words every 3s: it rests, glides from just before the title to just past it,
+ * and rests again. */
 .title-shimmer {
   --title-shimmer-ink: var(--color-fg);
   background-image: linear-gradient(
@@ -323,9 +356,8 @@ body {
 /* ---------- Home heading: "What should we study?" ----------
  * When the home screen opens, an underline draws itself beneath "study" and a glint of light
  * travels along it, sweeping across the word's letters at the same moment. Both run once, with
- * the same size, colors and timing so the light on the line and on the word stay in step. Like
- * Grok's "explore", the underline then fades away (500ms) the moment the glint has passed,
- * leaving just the word. The word itself is always the heading's color (white on dark, near
+ * the same size, colors and timing so the light on the line and on the word stay in step. The
+ * underline then fades away (500ms) the moment the glint has passed, leaving just the word. The word itself is always the heading's color (white on dark, near
  * black on light), whatever the accent: only the passing glint carries the accent. */
 
 .study-word {
@@ -444,7 +476,6 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .shimmer,
-  .work-spinner,
   .study-word,
   .study-underline,
   .tooltip-in,
@@ -457,7 +488,18 @@ body {
     background: none;
     color: var(--color-muted);
   }
-  /* As in Claude, a working chat's title simply stays still. */
+  /* The mark at rest: drawn whole, with its dot lit. */
+  .working-mark-light {
+    display: none;
+  }
+  .working-mark-track {
+    opacity: 1;
+  }
+  .working-mark-spark {
+    animation: none;
+    opacity: 1;
+  }
+  /* A working chat's title simply stays still. */
   .title-shimmer {
     animation: none;
     background: none;

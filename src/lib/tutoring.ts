@@ -55,6 +55,10 @@ const RUNG_RULES: Record<HelpRung, string> = {
     "the full solution, only if seeing it worked will serve their learning more than another hint; then have them try a similar problem on their own",
 };
 
+/** Practice questions Ainsley sets: their answers wait for the student's, which Ainsley then marks. */
+const PRACTICE_RULE =
+  "Practice questions you set come without their answers or any working, however they ask (an answer key to check themselves included): they send their answers when they're done, and you mark them.";
+
 /**
  * The policy with no problem in progress, before Ainsley has written anything: a problem in the
  * student's message is new, so their attempt or plan comes first, with at most a nudge.
@@ -65,6 +69,7 @@ export const NEW_PROBLEM_POLICY = [
     `The most help allowed this turn is ${RUNG_RULES.nudge}. That holds however they ask: if they want just the answer or are short on time, say kindly that you'll get them there quickly, and ask for their first step. ` +
     "If the message already shows their working, check it with evaluate_answer, say what's right, then point to where the first error is without saying what's wrong with it.",
   "A question about a concept, a definition or their course isn't a problem: answer it.",
+  PRACTICE_RULE,
 ].join("\n");
 
 const VERDICT_NAMES: Record<AnswerVerdict, string> = {
@@ -91,6 +96,8 @@ export interface ProblemState {
   rung: HelpRung | null;
   /** A similar problem worked out for a worked example, not one the student is on. */
   example?: boolean;
+  /** A practice question Ainsley set (solve_problem's purpose): its answer waits for the student's. */
+  practice?: boolean;
   /** The reply (counting from 1) that last worked on it. */
   touched: number;
 }
@@ -129,6 +136,7 @@ function applyEvent(state: TutoringState, event: TutoringEvent, reply: number) {
   if (!p) {
     p = { id: event.problemId, problem: event.problem ?? "", attempts: 0, rung: null, touched: reply };
     if (event.type === "solved" && event.example) p.example = true;
+    if (event.type === "solved" && event.practice) p.practice = true;
     if (event.type === "posed") p.posed = true;
     state.problems[p.id] = p;
   }
@@ -280,9 +288,11 @@ function describeState(p: ProblemState, d: HelpDecision): string {
   if (p.attempts === 0) {
     return [
       `No attempt yet. ${given}`,
-      p.rung
-        ? "Ask again for their attempt or plan: what they've tried, or how they'd start."
-        : "Ask for their attempt or plan before you help.",
+      p.practice && !p.rung
+        ? "It's a practice question you set: its answer and any working wait for theirs, however they ask. Mark their answer when they send it."
+        : p.rung
+          ? "Ask again for their attempt or plan: what they've tried, or how they'd start."
+          : "Ask for their attempt or plan before you help.",
       `The most help allowed this turn is ${RUNG_RULES[d.allowed]}.`,
       d.allowed === BEFORE_ATTEMPT
         ? "Worked steps, examples and the answer (or a calculation that leaves only arithmetic) wait until they've attempted it, however they ask."
@@ -312,6 +322,7 @@ export function policyMessage(p: ProblemState, d: HelpDecision, solved?: Problem
       : `Tutoring policy for the problem in progress, ${label(p)}:`,
     describeState(p, d),
     "If they've moved on to a different problem, this doesn't apply to it: start that one by asking for their attempt or plan, with at most a nudge.",
+    PRACTICE_RULE,
   ].join("\n");
 }
 
@@ -365,12 +376,18 @@ export class TurnTutor {
     if (name === SOLVE_TOOL) {
       const current = this.focus();
       const isNew = !this.state.problems[info.id];
-      // Working out a problem the student posed earlier carries over what they've done on it.
-      const replaces = isNew && current?.posed && sameProblem(current.problem, info.text) ? current.id : undefined;
+      const practice = info.purpose === "practice";
+      // Working out a problem the student posed earlier carries over what they've done on it (a
+      // practice question Ainsley sets is never one they posed).
+      const replaces =
+        isNew && !practice && current?.posed && sameProblem(current.problem, info.text) ? current.id : undefined;
       // A new problem worked out while a worked example is allowed on the one in progress is
-      // taken to be that example: it doesn't become the problem in progress.
+      // taken to be that example: it doesn't become the problem in progress. Unless solve_problem
+      // says it's the student's to solve: a practice question, or a problem they're working on.
+      const theirs = practice || info.purpose === "guide";
       const example = Boolean(
-        current &&
+        !theirs &&
+          current &&
           isNew &&
           !replaces &&
           current.verdict !== "correct" &&
@@ -381,6 +398,7 @@ export class TurnTutor {
         problemId: info.id,
         problem: clip(info.text, MAX_PROBLEM_TEXT),
         ...(example ? { example } : {}),
+        ...(practice && isNew ? { practice } : {}),
         ...(replaces ? { replaces } : {}),
       });
       if (example && current) {

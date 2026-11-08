@@ -1,5 +1,5 @@
 /**
- * The evals' own Claude calls (the simulated students, the rubric judge, and the answer-equivalence
+ * The evals' own model calls (the simulated students, the rubric judge, and the answer-equivalence
  * fallback), separate from the app's. Each returns JSON in a fixed shape, and its token usage is
  * tallied so a run can report what the harness itself spent.
  */
@@ -55,7 +55,7 @@ export async function askJson({ label, system, prompt, schema, effort = "high", 
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
       throw new HarnessError(
-        "The evals' own Claude calls couldn't authenticate. Set ANTHROPIC_API_KEY (npm run eval reads .env.local).",
+        "The evals' own model calls couldn't authenticate. Set ANTHROPIC_API_KEY (npm run eval reads .env.local).",
       );
     }
     throw err;

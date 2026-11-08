@@ -9,8 +9,8 @@ import { CourseIcon } from "./course-icon";
 import { Menu } from "./menu";
 
 /**
- * All of the student's courses, as cards (like Claude's projects page). Each card opens its
- * course, and its menu edits or deletes it.
+ * All of the student's courses, as cards. Each card opens its course, and its menu edits or
+ * deletes it.
  */
 export function CoursesView({
   conversations,

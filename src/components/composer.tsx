@@ -64,9 +64,9 @@ const ROW: CSSProperties = {
 const ROW_CHROME = 2 * 8 + 3 * 6 + 2 * 4;
 
 /**
- * Grok-proportioned input: 24px radius, 16px/28px text, 14px top padding and a 58px
- * action row — 102px tall when empty, growing with the text up to 40% of the viewport.
- * Attached files sit above the text as chips. `compact` makes it a 58px row in chats.
+ * The input: 24px radius, 16px/28px text, 14px top padding and a 58px action row — 102px tall
+ * when empty, growing with the text up to 40% of the viewport. Attached files sit above the text
+ * as chips. `compact` makes it a 58px row in chats.
  */
 export function Composer({
   value,

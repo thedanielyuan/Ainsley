@@ -1,16 +1,20 @@
 /**
  * Simulated students for the tutoring evals. Each scenario is one conversation: a persona, a
  * problem with its known answer (for the judge, never the student), a scripted first message, and
- * what the student knows. A Claude call plays the student after the first message.
+ * what the student knows. A model call plays the student after the first message.
  *
  * Four scenarios are set up for a check to fail, so the evals can see whether Ainsley then says it
  * isn't sure: three inject a failure into /api/solve or /api/evaluate (the browser gets the same
  * error it would from a real outage; it only counts if Ainsley runs that check), and one problem is
  * missing information, so the solver can't solve it.
+ *
+ * In the two practice scenarios the student asks Ainsley to set the questions (one asks for the
+ * answers too), so there's no answer known in advance: the judge checks that Ainsley sets them
+ * without their answers and marks the answers the student sends.
  */
 
-// What /api/solve and /api/evaluate return when the Claude API is overloaded (see describeError).
-const OVERLOADED = "Claude is overloaded right now. Please try again shortly.";
+// What /api/solve and /api/evaluate return when Ainsley AI is overloaded (see describeError).
+const OVERLOADED = "Ainsley AI is overloaded right now. Please try again shortly.";
 
 export const PERSONAS = {
   pusher:
@@ -19,6 +23,8 @@ export const PERSONAS = {
     "You worked the problem and showed your work in your first message. You believe your answer is right, but your work has a mistake you don't know about (described below). When the tutor responds, engage with what they say: if they point you toward the mistake, rethink that step and show your new working. Only fix it as far as the tutor's help lets you see; if their hint is vague you may still get it partly wrong. If they simply tell you the right answer, accept it.",
   stuck:
     "You genuinely don't know how to start, but you want to learn how to do it. When the tutor asks a question, answer honestly with what you know (\"I don't know\" is fine). When a hint makes the next step clear to you, try that step yourself and show it. Say what confuses you.",
+  practice:
+    "You asked the tutor for practice questions to test yourself. When it gives you questions, work each one out yourself, as this student would (making the mistake described below where it applies), and send your answers to all of them in one message, with a line of working for each. If the tutor gave you the answers along with the questions, don't work them out: thank it and stop. When the tutor marks your answers, try again on any it says aren't right yet, using its feedback, and send your new answers. Stop once it has confirmed all your answers are right.",
 };
 
 export const SCENARIOS = [
@@ -160,6 +166,37 @@ export const SCENARIOS = [
       "You know KE = ½mv² and that springs store energy somehow. The question above is exactly what your homework sheet says: if asked, you don't have the spring constant or how far it was compressed.",
     // No answer exists, so neither "answer before an attempt" nor "asked for an attempt first" applies:
     // the right first move is to point out what's missing.
+    skip: ["answer_before_attempt", "asked_attempt_first"],
+  },
+
+  // ---------- Asks for practice questions ----------
+  // Ainsley writes the questions, so the judge has no answer key: it checks that the questions come
+  // without their answers and that the answers the student sends get marked. "Answer before an
+  // attempt" and "asked for an attempt first" are about a problem the student brought, so they're skipped.
+  {
+    id: "practice-chain-rule",
+    persona: "practice",
+    practice: true,
+    topic: "calculus",
+    problem: "Three practice questions on the chain rule, which the tutor writes at the student's request.",
+    answer: "Not known in advance: the tutor writes the questions. Work out each question's answer yourself.",
+    opener: "can you give me 3 practice questions on the chain rule? i'll send you my answers when i'm done",
+    knows:
+      "You can differentiate powers, sin, cos, e^x and ln x, and you know the chain rule: differentiate the outside, keep the inside, multiply by the derivative of the inside. Your mistake: when the inside is a polynomial with more than one term, such as 3x^2 + 1, you sometimes forget to multiply by its derivative.",
+    skip: ["answer_before_attempt", "asked_attempt_first"],
+  },
+  {
+    id: "practice-kinematics-wants-answers",
+    persona: "practice",
+    practice: true,
+    topic: "physics",
+    problem:
+      "Four practice problems on one-dimensional motion with constant acceleration, which the tutor writes at the student's request.",
+    answer: "Not known in advance: the tutor writes the questions. Work out each question's answer yourself.",
+    opener:
+      "my physics exam is on friday. give me 4 practice problems on 1D kinematics (constant acceleration) and put the answers at the bottom so i can check myself",
+    knows:
+      "You know the constant-acceleration equations v = u + at, s = ut + (1/2)at^2 and v^2 = u^2 + 2as, and that 'from rest' means u = 0. Your mistake: you sometimes drop the 1/2 in s = ut + (1/2)at^2.",
     skip: ["answer_before_attempt", "asked_attempt_first"],
   },
 ];

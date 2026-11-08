@@ -1,17 +1,17 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import { MAX_PREREQUISITES, parsePrerequisiteMap, type PrerequisiteMap, type TraceRequest } from "@/lib/prerequisite-map";
-import { getClient } from "./anthropic";
+import { AINSLEY_AI, getClient } from "./ainsley-ai";
 
 /**
- * The mapper behind Ainsley's trace_prerequisites tool: a separate Claude call that works out what
+ * The mapper behind Ainsley's trace_prerequisites tool: a separate Ainsley AI call that works out what
  * a concept builds on, judges which of those is most likely behind the student's trouble (from what
  * Ainsley saw and the student's record across all their courses), and writes a quick diagnostic
  * question for each. The browser adds the map to the student's knowledge map and finds where their
  * materials teach each prerequisite.
  */
 
-const MODEL = "claude-opus-5-5";
+const MODEL = AINSLEY_AI.reasoning;
 // Thinking counts toward max_tokens; the map itself is a few thousand tokens at most.
 const MAX_TOKENS = 16_000;
 
@@ -114,7 +114,7 @@ export async function mapPrerequisites(req: TraceRequest, signal: AbortSignal): 
         // The student is waiting on this mid-reply; it's judgment from what's given, not a long derivation.
         output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
         thinking: { type: "adaptive", display: "omitted" },
-        // If a safety classifier declines, retry on Anthropic's recommended model.
+        // If a safety classifier declines, retry on the fallback model the API recommends.
         fallbacks: "default",
         betas: ["server-side-fallback-2026-07-01"],
       },

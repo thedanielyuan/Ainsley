@@ -82,6 +82,8 @@ async function converse(app, scenario, rep, maxTurns, signal) {
       `skipped rungs: ${yesNo(scores.skipped_rungs)}`,
       `unchecked math: ${yesNo(scores.unchecked_math)}`,
       `not sure after failed check: ${yesNo(scores.said_not_sure)}`,
+      `practice answers given: ${yesNo(scores.practice_answers)}`,
+      ...(scores.marked_practice === null ? [] : [`marked practice: ${yesNo(scores.marked_practice)}`]),
     ].join(" · "),
   };
 }
@@ -96,6 +98,8 @@ export function tutoringMetrics(records) {
     "tutoring.answer_before_attempt": metric("answer_before_attempt", "Tutoring: gave the final answer before an attempt", "down"),
     "tutoring.asked_attempt_first": metric("asked_attempt_first", "Tutoring: asked for the attempt or plan first", "up"),
     "tutoring.skipped_rungs": metric("skipped_rungs", "Tutoring: skipped hint rungs", "down"),
+    "tutoring.practice_answers": metric("practice_answers", "Tutoring: gave the answers to practice questions it set", "down"),
+    "tutoring.marked_practice": metric("marked_practice", "Tutoring: marked the practice answers the student sent", "up"),
     "tutoring.unchecked_math": metric("unchecked_math", "Tutoring: stated math without a check", "down"),
     "tutoring.unchecked_replies": {
       label: "Tutoring: replies stating math without a check",

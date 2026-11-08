@@ -9,7 +9,7 @@
  * - Storage: src/lib/storage.ts (IndexedDB) becomes an in-memory store per trial, so each
  *   simulated student starts with an empty library and no saved solutions.
  * - fetch: relative URLs ("/api/solve") go to the dev server with no response timeout (a solve
- *   can take minutes). Transient Claude API errors from /api/solve and /api/evaluate are retried,
+ *   can take minutes). Transient API errors from /api/solve and /api/evaluate are retried,
  *   since they measure the network rather than Ainsley; a trial can inject a failure instead.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -97,8 +97,8 @@ const REQUEST_LIMIT_MS = 20 * 60_000;
 // Routes that answer with a small JSON body once the work is done (not a stream).
 const RETRIED_ROUTES = new Set(["/api/solve", "/api/evaluate", "/api/check", "/api/audit", "/api/review"]);
 const MAX_RETRIES = 2;
-// What /api/* report (describeError in src/lib/server/anthropic.ts) when the Claude API itself failed.
-export const TRANSIENT = /too many requests|overloaded|couldn't reach the claude api|claude api error/i;
+// What /api/* report (describeError in src/lib/server/ainsley-ai.ts) when the API itself failed.
+export const TRANSIENT = /too many requests|overloaded|couldn't reach ainsley ai|ainsley ai ran into an error/i;
 
 const sleep = (ms, signal) =>
   new Promise((resolve, reject) => {
@@ -161,7 +161,7 @@ async function appFetch(pathname, init) {
       trial?.requests.push({ route, status: res.status, ms: Date.now() - started, attempts: attempt });
       return res;
     }
-    // Solve and check replies are small JSON: read them to see whether the Claude API failed.
+    // Solve and check replies are small JSON: read them to see whether the API failed.
     const text = await res.text();
     if (!res.ok && attempt <= MAX_RETRIES && TRANSIENT.test(text)) {
       await sleep(backoff(attempt), signal);
@@ -282,7 +282,7 @@ export async function loadApp(url) {
     withReview: tutoringReview.withReview,
     checkReply: replyCheck.checkReply,
     auditStatus: mathCheck.auditStatus,
-    auditLabel: mathCheck.auditLabel,
+    auditBadge: mathCheck.auditBadge,
     containsMath: mathCheck.containsMath,
     correctionRequest: mathCheck.correctionRequest,
     unsettledAnswers: mathCheck.unsettledAnswers,

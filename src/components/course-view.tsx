@@ -35,9 +35,8 @@ export function courseDeleteRequest(courseId: string, onDeleted: () => void): Co
 const AUTO_SYNC_MS = 60_000;
 
 /**
- * A course page, laid out like a Claude project: the course's name, composer and chats, with a
- * slim column beside them (under the composer on narrow screens) whose Materials row opens the
- * course's folder and files in a dialog.
+ * A course page: the course's name, composer and chats, with a slim column beside them (under the
+ * composer on narrow screens) whose Materials row opens the course's folder and files in a dialog.
  */
 export function CourseView({
   courseId,

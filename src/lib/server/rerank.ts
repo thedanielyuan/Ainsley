@@ -1,14 +1,14 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
-import { getClient } from "./anthropic";
+import { AINSLEY_AI, getClient } from "./ainsley-ai";
 
 /**
- * Re-ranks the passages a keyword search of the student's materials found, by meaning: Claude
- * Haiku 5.5 picks the ones that are about what Ainsley searched for, best first, and leaves out
+ * Re-ranks the passages a keyword search of the student's materials found, by meaning: Ainsley
+ * AI's fast tier picks the ones that are about what Ainsley searched for, best first, and leaves out
  * those that only share words with the query.
  */
 
-const MODEL = "claude-haiku-5-5";
+const MODEL = AINSLEY_AI.fast;
 // Thinking counts toward max_tokens; the answer itself is a short list.
 const MAX_TOKENS = 8_000;
 
@@ -63,7 +63,7 @@ export async function rerankPassages(
     },
     { signal },
   );
-  // Haiku 5.5 has no server-side fallback: the search keeps its keyword order.
+  // The fast tier has no server-side fallback: the search keeps its keyword order.
   if (message.stop_reason === "refusal") return null;
   const raw = message.content.filter((b): b is Anthropic.TextBlock => b.type === "text").at(-1)?.text;
   if (!raw || message.stop_reason === "max_tokens") throw new Error("The re-ranking didn't finish.");

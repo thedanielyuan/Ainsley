@@ -14,22 +14,24 @@ import {
   Network,
   Search,
   ShieldAlert,
-  ShieldCheck,
   Shapes,
   SquareFunction,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import { auditLabel } from "@/lib/math-check";
+import { auditBadge } from "@/lib/math-check";
 import type { Activity, MathAudit } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
+import { WorkingMark } from "./logo";
 
 /**
- * What Ainsley did before answering, laid out like Grok's thinking. While it works, a timeline
- * grows above a "Working for 12s" row: each stretch of thinking by name ("Planning a hint for
+ * What Ainsley did before answering. While it works, a timeline grows above a "Working for 12s"
+ * row marked by Ainsley's mark at work: each stretch of thinking by name ("Planning a hint for
  * part (b)"), and each lookup. When the answer starts, the row turns into "Worked for 28s"; when
- * the reply is done, the steps fold into that line, which opens them again. Beside it, a reply
- * whose math couldn't be verified says "Not verified".
+ * the reply is done, the steps fold into that line, which opens them again.
+ *
+ * The check of a finished reply's math runs out of sight: the student sees nothing of it unless it
+ * finds a problem, when "Not verified" appears beside the line and the steps end with what it found.
  */
 
 /** Below this, a reply with no steps doesn't say how long it took. */
@@ -53,13 +55,20 @@ const ICONS: Record<Activity["kind"], LucideIcon> = {
   web_fetch: Link2,
 };
 
-/** Steps that stand alone even when repeated: thoughts, solves, answer and math checks, simulations and prerequisite maps. */
-const STANDALONE = new Set<Activity["kind"]>(["thought", "solve", "evaluate", "check", "simulation", "prerequisites"]);
+/** Steps that stand alone even when repeated: thoughts, solves, answer checks, simulations and prerequisite maps. */
+const STANDALONE = new Set<Activity["kind"]>(["thought", "solve", "evaluate", "simulation", "prerequisites"]);
 
-/** Result filtering can repeat an identical lookup; show it once. */
-function dedupe(activity: Activity[]) {
+/**
+ * Ainsley's checks of its own math (check_math) run out of sight, like the check of each finished
+ * reply: when one leaves it unsure, the student hears so in the reply itself.
+ */
+const HIDDEN = new Set<Activity["kind"]>(["check"]);
+
+/** The steps the student sees: no math checks, and a lookup that result filtering repeated, once. */
+function shown(activity: Activity[]) {
   const seen = new Set<string>();
   return activity.filter((a) => {
+    if (HIDDEN.has(a.kind)) return false;
     if (STANDALONE.has(a.kind)) return true;
     const key = `${a.kind}:${a.label}`;
     if (seen.has(key)) return false;
@@ -68,10 +77,10 @@ function dedupe(activity: Activity[]) {
   });
 }
 
-/** Back-to-back searches fold into one "Ran 3 searches" step, as in Grok. */
+/** Back-to-back searches fold into one "Ran 3 searches" step. */
 function toSteps(activity: Activity[]): Step[] {
   const steps: Step[] = [];
-  for (const item of dedupe(activity)) {
+  for (const item of shown(activity)) {
     const last = steps.at(-1);
     if (last && SEARCHES.has(item.kind)) {
       if (last.type === "searches") {
@@ -106,6 +115,8 @@ function describe(a: Activity): ReactNode {
     case "module":
       return `${now ? "Reading" : "Read"} “${a.label}” from your course`;
     case "solve":
+      if (a.purpose === "practice") return now ? "Preparing a practice question" : "Prepared a practice question";
+      if (a.purpose === "example") return now ? "Working out an example" : "Worked out an example";
       return now ? "Solving the problem" : "Solved the problem";
     case "evaluate":
       return now ? "Checking your answer" : "Checked your answer";
@@ -189,20 +200,23 @@ function SearchGroup({ items }: { items: Activity[] }) {
   );
 }
 
-/** The check of the reply's math, as the last step in the list. */
+/**
+ * What the check of the reply's math found, as the last step in the list: only a problem. A check
+ * still running, or one that verified every claim, stays out of sight.
+ */
 function auditStep(audit: MathAudit | undefined): Activity | null {
-  const label = audit && auditLabel(audit.status);
-  if (!audit || !label) return null;
+  if (!audit || !auditBadge(audit.status)) return null;
   const claims = audit.claims ?? [];
   const count = (n: number, what = "claim") => `${n} ${what}${n === 1 ? "" : "s"}`;
   const wrong = claims.filter((c) => c.status === "false").length;
   const unchecked = claims.filter((c) => c.status === "cannot_check").length;
-  let text = "Checking the math in this reply";
-  if (audit.status === "checked") text = `Checked ${count(claims.length)} by running code`;
-  else if (audit.status === "wrong") text = `Found ${count(wrong, "false claim")}${audit.corrected ? ", corrected below" : ""}`;
-  else if (audit.status === "unverified") text = `Couldn't verify ${unchecked} of ${count(claims.length)}`;
-  else if (audit.status === "failed") text = "Couldn't check the math in this reply";
-  return { id: "audit", kind: "check", label: text, status: audit.status === "running" ? "running" : "done" };
+  const label =
+    audit.status === "wrong"
+      ? `Found ${count(wrong, "false claim")}${audit.corrected ? ", corrected below" : ""}`
+      : audit.status === "unverified"
+        ? `Couldn't verify ${unchecked} of ${count(claims.length)}`
+        : "Couldn't check the math in this reply";
+  return { id: "audit", kind: "check", label, status: "done" };
 }
 
 function StepList({ steps, id, audit }: { steps: Step[]; id?: string; audit?: MathAudit }) {
@@ -217,7 +231,7 @@ function StepList({ steps, id, audit }: { steps: Step[]; id?: string; audit?: Ma
             <span aria-hidden="true" className="absolute -bottom-[9px] left-3.5 top-[23px] w-px -translate-x-1/2 bg-line" />
           )}
           {step.type === "one" ? (
-            step.item === last ? <AuditRow audit={audit!} step={last} /> : <StepRow item={step.item} />
+            step.item === last ? <AuditRow step={last} /> : <StepRow item={step.item} />
           ) : (
             <SearchGroup items={step.items} />
           )}
@@ -227,40 +241,21 @@ function StepList({ steps, id, audit }: { steps: Step[]; id?: string; audit?: Ma
   );
 }
 
-function AuditRow({ audit, step }: { audit: MathAudit; step: Activity }) {
-  const Icon = audit.status === "checked" ? ShieldCheck : audit.status === "running" ? Calculator : ShieldAlert;
+function AuditRow({ step }: { step: Activity }) {
   return (
     <div className="flex min-w-0 items-start gap-0.5 text-sm leading-6">
       <IconCell>
-        <Icon className="size-3.5" />
+        <ShieldAlert className="size-3.5" />
       </IconCell>
-      <span className={cn("min-w-0 flex-1 truncate ps-0.5", step.status === "running" ? "shimmer" : "text-subtle")}>
-        {step.label}
-      </span>
+      <span className="min-w-0 flex-1 truncate ps-0.5 text-subtle">{step.label}</span>
     </div>
   );
 }
 
-/**
- * What sits beside "Worked for 28s": the check still running, or "Not verified". Math that checked
- * out needs no badge; the step list still ends with what was checked.
- */
-function badgeLabel(audit?: MathAudit): string | null {
-  if (!audit || audit.status === "checked") return null;
-  return auditLabel(audit.status);
-}
-
+/** "Not verified" beside "Worked for 28s", once the check of the reply's math has found a problem. */
 function AuditBadge({ audit }: { audit?: MathAudit }) {
-  const label = badgeLabel(audit);
-  if (!audit || !label) return null;
-  if (audit.status === "running") {
-    return (
-      <span role="status" className="inline-flex items-center gap-1.5 text-sm leading-6 text-subtle">
-        <span aria-hidden="true" className="work-spinner" />
-        <span className="shimmer">{label}</span>
-      </span>
-    );
-  }
+  const label = audit && auditBadge(audit.status);
+  if (!label) return null;
   return (
     <span role="status" className="inline-flex items-center gap-1 text-sm leading-6 text-muted">
       <ShieldAlert aria-hidden="true" className="size-3.5" />
@@ -285,7 +280,7 @@ function WorkingRow({ startedAt }: { startedAt: number }) {
   return (
     <div role="status" className="flex items-start gap-0.5 text-sm leading-6 text-subtle">
       <IconCell>
-        <span aria-hidden="true" className="work-spinner" />
+        <WorkingMark />
       </IconCell>
       <span className="ps-0.5">{seconds > 0 ? `Working for ${formatDuration(seconds * 1000)}` : "Working"}</span>
     </div>
@@ -328,7 +323,7 @@ export function WorkTimeline({
   const badge = <AuditBadge audit={audit} />;
   if (!steps.length) {
     const showWorked = workMs !== undefined && workMs >= MIN_SHOWN_MS;
-    if (!showWorked && !badgeLabel(audit)) return null;
+    if (!showWorked && !(audit && auditBadge(audit.status))) return null;
     return (
       <div className="flex flex-wrap items-center gap-x-3">
         {showWorked && workedLine}

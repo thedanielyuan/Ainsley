@@ -1,4 +1,4 @@
-/** The simulated student: a Claude call that plays one scenario's persona, turn by turn. */
+/** The simulated student: a model call that plays one scenario's persona, turn by turn. */
 import { askJson } from "../lib/claude.mjs";
 import { PERSONAS } from "./scenarios.mjs";
 

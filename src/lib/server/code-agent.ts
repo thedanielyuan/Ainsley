@@ -1,17 +1,16 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ApiBlock } from "@/lib/types";
-import { getClient } from "./anthropic";
+import { AINSLEY_AI, getClient, type AinsleyTier } from "./ainsley-ai";
 import { toReplayContent } from "./replay";
 
 /**
- * A Claude call that can run code (sympy, numpy, scipy) in a sandbox before answering in a fixed
- * JSON shape, with no stake in the tutoring conversation. The two solvers, the verifier, the
- * answer checker and the math checker run this way, on Claude Opus 5.5 at high effort unless a
+ * An Ainsley AI call that can run code (sympy, numpy, scipy) in a sandbox before answering in a
+ * fixed JSON shape, with no stake in the tutoring conversation. The two solvers, the verifier, the
+ * answer checker and the math checker run this way, on the reasoning tier at high effort unless a
  * caller says otherwise.
  */
 
-const MODEL = "claude-opus-5-5";
 // Thinking and code-execution output count toward max_tokens; the JSON itself is short.
 const MAX_TOKENS = 32_000;
 // Resumes after `pause_turn` (a long run of code execution).
@@ -25,11 +24,12 @@ export async function runCodeAgent(opts: {
   content: ApiBlock[];
   schema: Record<string, unknown>;
   signal: AbortSignal;
-  /** Another model for a quicker check (claude-haiku-5-5 has no server-side fallback). */
-  model?: "claude-haiku-5-5";
+  /** The fast tier, for a quicker check (it has no server-side fallback). */
+  tier?: AinsleyTier;
   effort?: "high" | "max";
 }): Promise<Record<string, unknown> | null> {
-  const model = opts.model ?? MODEL;
+  const tier = opts.tier ?? "reasoning";
+  const model = AINSLEY_AI[tier];
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: opts.content }];
   let container: string | undefined;
 
@@ -47,8 +47,8 @@ export async function runCodeAgent(opts: {
           // These have to be right: a wrong solution or verdict teaches the wrong thing.
           output_config: { effort: opts.effort ?? "high", format: { type: "json_schema", schema: opts.schema } },
           thinking: { type: "adaptive", display: "omitted" },
-          // If a safety classifier declines, retry on Anthropic's recommended model.
-          ...(model === MODEL ? { fallbacks: "default" as const, betas: ["server-side-fallback-2026-07-01"] } : {}),
+          // If a safety classifier declines, retry on the fallback model the API recommends.
+          ...(tier === "reasoning" ? { fallbacks: "default" as const, betas: ["server-side-fallback-2026-07-01"] } : {}),
         },
         { signal: opts.signal },
       )
