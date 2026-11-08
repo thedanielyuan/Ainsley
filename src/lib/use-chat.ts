@@ -562,16 +562,16 @@ export function useChat() {
             error: exhausted ? "Ainsley stopped after too many steps." : undefined,
             tutoring,
           });
-          // Review the help it gave on the problem in progress, unless that's already solved.
+          // Review what it was about and the help it gave: on the problem in progress, or on a new
+          // one the student brought.
           const problem = tutor?.focus();
-          if (!correction && tutoring && problem && problem.verdict !== "correct" && finalText.trim()) {
+          if (!correction && tutoring && finalText.trim()) {
             startReview({
               conversationId,
               replyId: assistantId,
-              problemId: problem.id,
-              problem: problem.problem,
+              problem: problem ? { id: problem.id, text: problem.problem, solved: problem.verdict === "correct" } : null,
               allowed: tutoring.allowed,
-              attempted: problem.attempts > 0,
+              attempted: Boolean(problem && problem.attempts > 0),
               reply: finalText,
               history,
               onReviewed: (fields) =>

@@ -114,8 +114,10 @@ async function runSolve(
 
   // The same problem in the same course is worked out once.
   const id = await problemId(input, ctx.courseId);
-  // The tutoring policy tracks the problem from here (src/lib/tutoring.ts), unless it can't be solved.
-  const tracked = (s: VerifiedSolution) => (s.status === "cannot_solve" ? {} : { problem: { id, text: input.problem } });
+  // The tutoring policy tracks the problem from here (src/lib/tutoring.ts), even when solving fails,
+  // unless it can't be solved as stated.
+  const problem = { id, text: input.problem };
+  const tracked = (s: VerifiedSolution) => (s.status === "cannot_solve" ? {} : { problem });
   const saved = await savedSolution(id);
   if (saved) return { ...answered(call.id, formatSolution(id, saved), SOLUTION_LABELS[saved.status]), ...tracked(saved) };
 
@@ -128,9 +130,9 @@ async function runSolve(
     signal,
     { what: "Solving", fallback, detail: "Couldn't solve" },
   );
-  if ("outcome" in reply) return reply.outcome;
+  if ("outcome" in reply) return { ...reply.outcome, problem };
   const solution = parseSolution(reply.data.solution);
-  if (!solution) return answered(call.id, `The solvers declined to work this problem. ${fallback}`, "Couldn't solve");
+  if (!solution) return { ...answered(call.id, `The solvers declined to work this problem. ${fallback}`, "Couldn't solve"), problem };
 
   await saveSolution(id, ctx.courseId, input.problem, solution);
   return { ...answered(call.id, formatSolution(id, solution), SOLUTION_LABELS[solution.status]), ...tracked(solution) };

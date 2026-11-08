@@ -193,17 +193,17 @@ export async function reply(app, { conversationId, input, correction, signal }) 
     ...(tutoring ? { tutoring } : {}),
   };
 
-  // The review of the help it gave on the problem in progress, unless that's already solved.
+  // The review of what it was about and the help it gave: on the problem in progress, or on a new
+  // one the student brought.
   const problem = tutor.focus();
   const finished = status === "done" || status === "truncated";
-  if (finished && !correction && tutoring && problem && problem.verdict !== "correct" && shown.trim()) {
+  if (finished && !correction && tutoring && shown.trim()) {
     app.startReview({
       conversationId,
       replyId: message.id,
-      problemId: problem.id,
-      problem: problem.problem,
+      problem: problem ? { id: problem.id, text: problem.problem, solved: problem.verdict === "correct" } : null,
       allowed: tutoring.allowed,
-      attempted: problem.attempts > 0,
+      attempted: Boolean(problem && problem.attempts > 0),
       reply: shown,
       history,
       onReviewed: (fields) => {

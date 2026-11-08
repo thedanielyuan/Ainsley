@@ -10,11 +10,12 @@ const MAX_STUDENT = 30_000;
 const MAX_KNOWN = 100_000;
 
 /**
- * Reviews one of Ainsley's replies on a problem for the tutoring policy (src/lib/tutoring.ts): the
- * most help it gave (Claude Haiku 5.5, src/lib/server/help-review.ts), and whether it stated the
- * final answer before the student had attempted it, found by comparing its math with the saved
- * answers' sympy forms (src/lib/answer-leak.ts) and by the reviewer. Leaks and help beyond what the
- * policy allowed are logged in development as metrics; nothing is blocked.
+ * Reviews one of Ainsley's replies for the tutoring policy (src/lib/tutoring.ts): whether it was
+ * about the problem in progress, a new problem the student brought, or neither, and the most help
+ * it gave (Claude Haiku 5.5, src/lib/server/help-review.ts); and whether it stated the final answer
+ * before the student had attempted the problem, found by comparing its math with the saved answers'
+ * sympy forms (src/lib/answer-leak.ts) and by the reviewer. Leaks and help beyond what the policy
+ * allowed are logged in development as metrics; nothing is blocked.
  */
 export async function POST(req: Request) {
   let payload: Record<string, unknown> | null;
@@ -27,8 +28,10 @@ export async function POST(req: Request) {
   const reply = str(payload?.reply, MAX_REPLY);
   if (!reply.trim()) return Response.json({ error: "reply must be a non-empty string." }, { status: 400 });
 
-  const problemId = str(payload?.problemId, 40) || "(unknown)";
+  // The problem in progress, if there is one.
+  const problemId = str(payload?.problemId, 80);
   const problem = str(payload?.problem, MAX_PROBLEM);
+  const solved = payload?.solved === true;
   const student = str(payload?.student, MAX_STUDENT);
   const answers = readAnswers(payload?.answers);
   const known: string[] = [];
@@ -41,19 +44,31 @@ export async function POST(req: Request) {
   const attempted = payload?.attempted === true;
   const allowed = HELP_RUNGS.find((rung) => rung === payload?.allowed) ?? null;
 
-  // Only an answer stated before their attempt is a leak.
-  const stated = attempted ? [] : findStatedAnswers(reply, answers, [problem, ...known]);
+  // Only an answer stated before their attempt is a leak; the saved answers are the problem in progress's.
+  const stated = attempted || solved || !problem ? [] : findStatedAnswers(reply, answers, [problem, ...known]);
   let review: HelpReview | null = null;
   try {
-    review = await reviewHelp({ problem, answers, student, reply }, req.signal);
+    review = await reviewHelp({ problem, solved, answers, student, reply }, req.signal);
   } catch (err) {
     if (req.signal.aborted) return new Response(null, { status: 499 });
     console.error("[ainsley] reviewing a reply failed:", err);
   }
-  const leak = !attempted && (stated.length > 0 || Boolean(review?.statesAnswer));
-  logReview({ problemId, attempted, allowed, review, stated, leak });
+  const leak = !review
+    ? stated.length > 0
+    : review.about === "this"
+      ? !attempted && !solved && (stated.length > 0 || review.statesAnswer)
+      : review.about === "new" && review.statesAnswer;
+  logReview({ problemId, attempted, allowed, review, stated: review && review.about !== "this" ? [] : stated, leak });
 
-  const body: ReviewResponse = review ? { reviewed: true, used: review.used, leak } : { reviewed: false, leak };
+  const body: ReviewResponse = review
+    ? {
+        reviewed: true,
+        used: review.used,
+        about: review.about,
+        ...(review.about === "new" ? { problem: review.problem } : {}),
+        leak,
+      }
+    : { reviewed: false, leak };
   return Response.json(body);
 }
 
@@ -68,9 +83,13 @@ function logReview(r: {
 }) {
   if (process.env.NODE_ENV === "production") return;
   const yes = (v: boolean) => (v ? "yes" : "no");
+  const about = r.review?.about ?? "unreviewed";
+  // A reply about a new problem is held to what a new problem allows, whatever was in progress.
+  const allowed = about === "new" ? "nudge" : r.allowed;
+  const subject = about === "new" ? "new problem" : r.problemId || "no problem";
   const used = r.review ? (r.review.used ?? "none") : "unreviewed";
   console.log(
-    `[ainsley] tutoring ${r.problemId}: allowed=${r.allowed ?? "?"} used=${used} attempted=${yes(r.attempted)}` +
+    `[ainsley] tutoring ${subject}: about=${about} allowed=${allowed ?? "?"} used=${used} attempted=${yes(r.attempted && about === "this")}` +
       (r.review ? ` asked_for_attempt=${yes(r.review.asksForAttempt)}` : ""),
   );
   if (r.leak) {
@@ -78,11 +97,11 @@ function logReview(r: {
       ...r.stated.map((s) => `sympy match ${s.part ? `${s.part} ` : ""}${s.answer} in "${s.quote}"`),
       ...(r.review?.statesAnswer ? [`reviewer: "${r.review.evidence}"`] : []),
     ];
-    console.warn(`[ainsley] answer leak ${r.problemId}: the reply stated the final answer before an attempt (${found.join("; ")})`);
+    console.warn(`[ainsley] answer leak (${subject}): the reply stated the final answer before an attempt (${found.join("; ")})`);
   }
-  if (r.review && r.allowed && rungLevel(r.review.used) > rungLevel(r.allowed)) {
+  if (r.review && about !== "none" && allowed && rungLevel(r.review.used) > rungLevel(allowed)) {
     console.warn(
-      `[ainsley] over-help ${r.problemId}: used=${r.review.used} allowed=${r.allowed}` +
+      `[ainsley] over-help (${subject}): used=${r.review.used} allowed=${allowed}` +
         (r.review.evidence ? ` ("${r.review.evidence}")` : ""),
     );
   }
