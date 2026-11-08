@@ -1,5 +1,7 @@
 import { parseMaterialSource } from "./course-tools";
 import type { LibraryState } from "./library";
+import { simulationMarker } from "./simulation/marker";
+import { SIMULATION_TOOL } from "./tool-names";
 import type { ApiTurn, ChatMessage, Source } from "./types";
 
 type Citation = {
@@ -61,6 +63,8 @@ function insideCodeOrMath(text: string) {
 function appendMarker(body: string, mark: string): string | null {
   if (insideCodeOrMath(body)) return null;
   const line = body.slice(body.lastIndexOf("\n") + 1);
+  // Right after a code fence (a simulation, say), a marker would break the fence.
+  if (/^\s*(```|~~~)/.test(line)) return null;
   if (!line.trimEnd().endsWith("|")) return body + mark;
   if (/^[\s|:-]*$/.test(line)) return null; // A table's header separator.
   const pipe = body.lastIndexOf("|");
@@ -71,8 +75,8 @@ function appendMarker(body: string, mark: string): string | null {
 
 /**
  * Turns an assistant reply's API transcript into what the student sees: the text, with a
- * marker where Ainsley cited their materials or the web (rendered as a source chip), and the
- * numbered sources behind those markers.
+ * marker where Ainsley cited their materials or the web (rendered as a source chip), each
+ * simulation it showed where it showed it, and the numbered sources behind those markers.
  */
 export function summarizeReply(turns: ApiTurn[], s: LibraryState): ReplySummary {
   let text = "";
@@ -80,6 +84,15 @@ export function summarizeReply(turns: ApiTurn[], s: LibraryState): ReplySummary 
   let separate = false;
   const sources: Source[] = [];
   const numbers = new Map<string, number>();
+
+  // Simulations whose input was rejected (Ainsley called again with a fixed one) aren't shown.
+  const failed = new Set<string>();
+  for (const turn of turns) {
+    if (turn.role !== "user") continue;
+    for (const block of turn.content) {
+      if (block.type === "tool_result" && block.is_error) failed.add(block.tool_use_id);
+    }
+  }
 
   // Web pages Ainsley fetched, so citations into them can link to the page.
   const fetched = new Map<string, string>();
@@ -147,6 +160,14 @@ export function summarizeReply(turns: ApiTurn[], s: LibraryState): ReplySummary 
     if (turn.role !== "assistant") continue;
     separate = true;
     for (const block of turn.content) {
+      if (block.type === "tool_use" && block.name === SIMULATION_TOOL && !failed.has(block.id)) {
+        placePending();
+        if (display && !display.endsWith("\n")) display += "\n\n";
+        else if (display && !display.endsWith("\n\n")) display += "\n";
+        display += simulationMarker(block.input);
+        separate = true;
+        continue;
+      }
       if (block.type !== "text") {
         separate = true;
         continue;

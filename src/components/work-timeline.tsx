@@ -11,6 +11,7 @@ import {
   Lightbulb,
   Link2,
   Search,
+  Shapes,
   SquareFunction,
   type LucideIcon,
 } from "lucide-react";
@@ -39,15 +40,16 @@ const ICONS: Record<Activity["kind"], LucideIcon> = {
   module: Layers,
   solve: SquareFunction,
   evaluate: ClipboardCheck,
+  simulation: Shapes,
   web_search: Globe,
   web_fetch: Link2,
 };
 
-/** Result filtering can repeat an identical lookup; show it once. Thoughts, solves and answer checks stand alone. */
+/** Result filtering can repeat an identical lookup; show it once. Thoughts, solves, answer checks and simulations stand alone. */
 function dedupe(activity: Activity[]) {
   const seen = new Set<string>();
   return activity.filter((a) => {
-    if (a.kind === "thought" || a.kind === "solve" || a.kind === "evaluate") return true;
+    if (a.kind === "thought" || a.kind === "solve" || a.kind === "evaluate" || a.kind === "simulation") return true;
     const key = `${a.kind}:${a.label}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -96,6 +98,8 @@ function describe(a: Activity): ReactNode {
       return now ? "Solving the problem" : "Solved the problem";
     case "evaluate":
       return now ? "Checking your answer" : "Checked your answer";
+    case "simulation":
+      return `${now ? "Drawing" : "Drew"} a ${a.label}`;
     case "web_fetch":
       return <>{now ? "Reading" : "Read"} <Query>{a.label}</Query></>;
   }

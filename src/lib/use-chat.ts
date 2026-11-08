@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runTool, toolActivity } from "./agent-tools";
 import { closeTurns, messageContent, nameThought, streamChat, toApiMessages } from "./chat-client";
 import { summarizeReply } from "./citations";
+import { SIMULATION_TOOL, simulationMarker, withoutSimulations } from "./simulation/marker";
 import { buildContext, lastContextState, resolveScope } from "./course-context";
 import {
   claimForConversation,
@@ -397,15 +398,21 @@ export function useChat() {
               .filter((m): m is Material => Boolean(m));
             // Run the calls together (an answer check takes a while) and return every result in
             // one message, in call order.
-            const results = await Promise.all(
+            const outcomes = await Promise.all(
               calls.map(async (call) => {
                 const outcome = await runTool(call, { ...scope, conversationId, attachments }, controller.signal);
                 setActivity(call.id, { status: outcome.ok ? "done" : "error", detail: outcome.detail });
                 scheduleFlush();
-                return outcome.result;
+                return outcome;
               }),
             );
-            turns.push({ role: "user", content: results });
+            // A simulation appears where Ainsley showed it, after what it wrote before the call.
+            calls.forEach((call, i) => {
+              if (call.name !== SIMULATION_TOOL || !outcomes[i].ok) return;
+              if (text && !text.endsWith("\n")) text += "\n\n";
+              text += `${simulationMarker(call.input)}\n`;
+            });
+            turns.push({ role: "user", content: outcomes.map((o) => o.result) });
             scheduleFlush();
             continue;
           }
@@ -432,14 +439,14 @@ export function useChat() {
           // Partial output from a declined response is discarded.
           patch({ text: "", turns: [], display: undefined, sources: undefined, activity, thinkingMs, status });
         } else if (status === "error") {
-          patch({ text, turns: [...turns], activity, thinkingMs, status, error });
+          patch({ text: withoutSimulations(text), turns: [...turns], activity, thinkingMs, status, error });
         } else {
           const finalTurns = closeTurns(
             stepText.trim() ? [...turns, { role: "assistant", content: [{ type: "text", text: stepText }] }] : turns,
           );
           const summary = summarizeReply(finalTurns, getLibrary());
           patch({
-            text: summary.text || text,
+            text: summary.text || withoutSimulations(text),
             display: summary.display || undefined,
             sources: summary.sources.length ? summary.sources : undefined,
             turns: finalTurns,

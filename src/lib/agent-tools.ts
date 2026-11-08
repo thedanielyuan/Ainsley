@@ -3,14 +3,14 @@ import { runCourseTool, type ToolContext, type ToolOutcome } from "./course-tool
 import { getLibrary } from "./library";
 import { problemId, savedSolution, saveSolution } from "./problems";
 import { formatSolution, parseSolution, parseSolveInput, SOLUTION_LABELS } from "./solution";
-import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL, SOLVE_TOOL } from "./tool-names";
+import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL, SIMULATION_TOOL, SOLVE_TOOL } from "./tool-names";
 import type { Activity, EvaluateResponse, Material, SolveResponse, VerifiedSolution } from "./types";
 
 /**
  * Runs the tool calls Ainsley makes on the browser's side of its loop, and describes each for the
  * activity list under a reply. Course tools read the local library; solving goes to /api/solve
- * (and the solution is saved here), answer checks to /api/evaluate. (Web search and fetch run on
- * Anthropic's side.)
+ * (and the solution is saved here), answer checks to /api/evaluate; a simulation is checked here
+ * and drawn in the reply. (Web search and fetch run on Anthropic's side.)
  */
 
 export interface AgentToolContext extends ToolContext {
@@ -25,7 +25,28 @@ export async function runTool(
 ): Promise<ToolOutcome> {
   if (call.name === SOLVE_TOOL) return runSolve(call, ctx, signal);
   if (call.name === EVALUATE_TOOL) return runEvaluate(call, ctx, signal);
+  if (call.name === SIMULATION_TOOL) return runSimulation(call);
   return runCourseTool(call, ctx, signal);
+}
+
+/**
+ * Checks a simulation's input (the reply then draws it where Ainsley called the tool) and tells
+ * Ainsley what the student now sees, or what to fix. The simulation code loads only when used.
+ */
+async function runSimulation(call: { id: string; input: unknown }): Promise<ToolOutcome> {
+  const [{ parseSimulation }, { describeSimulation }] = await Promise.all([
+    import("./simulation/spec"),
+    import("./simulation/describe"),
+  ]);
+  const parsed = parseSimulation(call.input);
+  if ("errors" in parsed) {
+    return failed(
+      call.id,
+      `The simulation wasn't shown. Fix these and call ${SIMULATION_TOOL} again:\n${parsed.errors.map((e) => `- ${e}`).join("\n")}`,
+      "Couldn't show it",
+    );
+  }
+  return answered(call.id, describeSimulation(parsed.spec), "");
 }
 
 function failed(id: string, message: string, detail: string): ToolOutcome {
@@ -142,6 +163,14 @@ export function toolActivity(name: string, input: Record<string, unknown>, id: s
       return { id, kind: "solve", label: str(input.problem).replace(/\s+/g, " ").trim(), status: "running" };
     case EVALUATE_TOOL:
       return { id, kind: "evaluate", label: str(input.problem).replace(/\s+/g, " ").trim(), status: "running" };
+    case SIMULATION_TOOL: {
+      const names: Record<string, string> = {
+        free_body_diagram: "free-body diagram",
+        vector_field: "vector field",
+        function_graph: "graph",
+      };
+      return { id, kind: "simulation", label: names[str(input.kind)] ?? "simulation", status: "running" };
+    }
     case "web_search":
       return { id, kind: "web_search", label: str(input.query), status: "running" };
     case "web_fetch": {

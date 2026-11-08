@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { isValidElement, memo, useRef, type ReactNode } from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -7,11 +8,40 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { parseMarkerHref } from "@/lib/citations";
+import { SIMULATION_LANGUAGE } from "@/lib/simulation/marker";
 import { CitationChip } from "./sources";
 import { CopyButton } from "./ui";
 
 const remarkPlugins: Options["remarkPlugins"] = [remarkGfm, remarkMath];
-const rehypePlugins: Options["rehypePlugins"] = [rehypeKatex, rehypeHighlight];
+const rehypePlugins: Options["rehypePlugins"] = [
+  rehypeKatex,
+  [rehypeHighlight, { plainText: [SIMULATION_LANGUAGE] }],
+];
+
+/** Simulations Ainsley shows (show_simulation): their code loads with the first one. */
+const SimulationBlock = dynamic(() => import("./simulation/simulation-block"), {
+  ssr: false,
+  loading: () => (
+    <div className="mb-4 grid h-[340px] place-items-center rounded-2xl border border-line text-sm text-subtle">
+      Loading simulation…
+    </div>
+  ),
+});
+
+type HastNode = { type: string; value?: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] };
+
+function textOf(node: HastNode): string {
+  if (node.type === "text") return node.value ?? "";
+  return (node.children ?? []).map(textOf).join("");
+}
+
+/** The JSON inside a simulation block (see lib/simulation/marker.ts), or null for other code. */
+function simulationSource(pre: HastNode | undefined) {
+  const code = pre?.children?.find((c) => c.type === "element" && c.tagName === "code");
+  const classes = code?.properties?.className;
+  if (!code || !Array.isArray(classes) || !classes.includes(`language-${SIMULATION_LANGUAGE}`)) return null;
+  return textOf(code).trim();
+}
 
 /**
  * Normalizes math for remark-math, outside code: \[ \] and a line that is only
@@ -49,8 +79,10 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 }
 
 const components: Components = {
-  pre(props) {
-    return <CodeBlock>{props.children}</CodeBlock>;
+  pre({ node, children }) {
+    const simulation = simulationSource(node as HastNode | undefined);
+    if (simulation !== null) return <SimulationBlock source={simulation} />;
+    return <CodeBlock>{children}</CodeBlock>;
   },
   a({ href, children }) {
     // Citation markers arrive as links to #src-… (see citations.ts).
