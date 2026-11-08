@@ -10,6 +10,11 @@ const SUGGESTIONS = [
   { icon: CalendarDays, label: "Plan my studying", prompt: "Help me make a study plan for my exam on " },
 ];
 
+/**
+ * The new-chat screen, placed like Grok's home. From 640px of chat width (Grok's breakpoint, a
+ * container query on this screen) the heading sits at Grok's height and the composer 28px under
+ * it; narrower, the heading sits in a centered 450px block and the composer pins to the bottom.
+ */
 export function EmptyState({
   composer,
   onSuggestion,
@@ -18,14 +23,12 @@ export function EmptyState({
   onSuggestion: (prompt: string) => void;
 }) {
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="flex w-full flex-col items-center px-4 pb-10 pt-4">
-        {/* Same vertical rhythm as Grok's home: the heading sits at ~0.8× of half the
-            viewport (minus the header allowance), 28px above the composer. */}
-        <div
-          className="flex w-full flex-col items-center gap-7"
-          style={{ paddingTop: "max(0px, calc(0.8 * max(50dvh - 64px, 240px) - 118.4px))" }}
-        >
+    <div className="@container relative flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto p-2 pb-36 @min-[40rem]:px-4 @min-[40rem]:pb-10 @min-[40rem]:pt-4">
+        {/* Grok puts the heading at 0.8× of half the viewport (less its 64px header allowance)
+            minus 118.4px, measured from the top of the window: its header floats over the page.
+            Ainsley's 56px header takes up room above this screen, so it comes off here too. */}
+        <div className="my-auto flex h-[450px] w-full shrink-0 flex-col items-center gap-6 @min-[40rem]:my-0 @min-[40rem]:h-auto @min-[40rem]:gap-7 @min-[40rem]:pt-[max(0px,calc(0.8*max(50dvh_-_64px,240px)_-_118.4px_-_56px))]">
           {/* "study" draws its underline and catches a passing glint as the screen opens (globals.css). */}
           <h1 className="text-balance px-4 text-center text-[28px] font-semibold leading-9 tracking-[-0.02em] text-fg">
             What should we{" "}
@@ -36,9 +39,11 @@ export function EmptyState({
             ?
           </h1>
 
-          <div className="w-full max-w-[752px]">{composer}</div>
+          <div className="absolute inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[752px] px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] @min-[40rem]:static @min-[40rem]:p-0">
+            {composer}
+          </div>
 
-          <div className="-mt-3 flex max-w-[752px] flex-wrap justify-center gap-2">
+          <div className="flex max-w-[752px] flex-wrap justify-center gap-2 @min-[40rem]:-mt-3">
             {SUGGESTIONS.map(({ icon: Icon, label, prompt }) => (
               <button
                 key={label}

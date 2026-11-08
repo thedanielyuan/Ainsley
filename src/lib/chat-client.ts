@@ -136,6 +136,23 @@ export function closeTurns(turns: ApiTurn[]): ApiTurn[] {
   return closed;
 }
 
+/** Names a step of Ainsley's thinking from its reasoning summary (see /api/thought); null if it can't. */
+export async function nameThought(reasoning: string): Promise<string | null> {
+  try {
+    const res = await fetch("/api/thought", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: reasoning }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { title?: unknown };
+    return typeof data.title === "string" && data.title ? data.title : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function streamChat(
   body: { messages: ApiMessage[]; container?: string | null },
   onEvent: (event: StreamEvent) => void,

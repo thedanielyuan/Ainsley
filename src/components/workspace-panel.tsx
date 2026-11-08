@@ -1,17 +1,13 @@
 "use client";
 
-import { FileText, Maximize2, Minimize2, PanelRight, X } from "lucide-react";
+import { Maximize2, Minimize2, PanelRight, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { replyCitations } from "@/lib/citations";
 import { useLibrary } from "@/lib/library";
 import { useLocalText } from "@/lib/local-flag";
-import type { Conversation } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { FileKindIcon } from "./attachments";
-import { Markdown } from "./markdown";
 import { MaterialPreview } from "./material-preview";
-import { ReplySourcesContext } from "./sources";
-import { CopyButton, IconButton } from "./ui";
+import { IconButton } from "./ui";
 import { DOCK_MIN_WIDTH, useWorkspace, type WorkspaceTab } from "./workspace-context";
 
 const DEFAULT_WIDTH = 520;
@@ -22,47 +18,15 @@ const contentId = (id: string) => `workspace-content-${id}`;
 
 function TabIcon({ tab }: { tab: WorkspaceTab }) {
   const library = useLibrary();
-  if (tab.kind === "material") return <FileKindIcon kind={library.materials[tab.materialId]?.kind ?? "text"} className="size-3.5 shrink-0" />;
-  return <FileText className="size-3.5 shrink-0" />;
-}
-
-function TabContent({ tab, conversation }: { tab: WorkspaceTab; conversation?: Conversation }) {
-  const library = useLibrary();
-  // Kept mounted across citations to the same file: a new revision scrolls to the cited page.
-  if (tab.kind === "material") return <MaterialPreview materialId={tab.materialId} page={tab.page} revision={tab.revision} />;
-  const message = conversation?.messages.find((item) => item.id === tab.messageId);
-  if (!message) {
-    return <div className="p-6 text-sm leading-6 text-muted">This response is no longer in the conversation. Open a newer response to continue.</div>;
-  }
-  if (message.status === "streaming") {
-    return <div role="status" className="p-6 text-sm leading-6 text-muted">Ainsley is updating this response…</div>;
-  }
-  const citations = replyCitations(message, library);
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line pe-2.5 ps-3.5">
-        <span className="truncate text-xs text-subtle">Ainsley’s response</span>
-        <CopyButton label="Copy response" getText={() => message.text} />
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-7 sm:px-8">
-        <div className="mx-auto max-w-[760px]">
-          <ReplySourcesContext.Provider value={{ messageId: message.id, sources: citations.sources ?? [] }}>
-            <Markdown text={citations.display ?? message.text} />
-          </ReplySourcesContext.Provider>
-        </div>
-      </div>
-    </div>
-  );
+  return <FileKindIcon kind={library.materials[tab.materialId]?.kind ?? "text"} className="size-3.5 shrink-0" />;
 }
 
 /** A chat's companion workspace, docked when there is room and modal on smaller screens. */
 export function WorkspacePanel({
   containerWidth,
-  conversation,
 }: {
   /** The width of the area the workspace shares with the page. */
   containerWidth: number;
-  conversation?: Conversation;
 }) {
   const workspace = useWorkspace();
   const { isOpen, expanded, activeId, tabs, closePanel, restoreFocus } = workspace;
@@ -202,12 +166,13 @@ export function WorkspacePanel({
           <div className="flex h-full flex-col items-center justify-center px-8 pb-14 text-center">
             <div className="mb-5 grid size-12 place-items-center rounded-2xl border border-line bg-ink/[0.03]"><PanelRight className="size-5 text-muted" /></div>
             <h2 className="text-base font-medium">A little more room to explore</h2>
-            <p className="mt-2 max-w-64 text-sm leading-6 text-muted">Open a file, a citation, or a response to view it here alongside your chat.</p>
+            <p className="mt-2 max-w-64 text-sm leading-6 text-muted">Open a file or a citation to view it here alongside your chat.</p>
           </div>
         ) : tabs.map((tab) => (
           <section key={tab.id} role="tabpanel" id={contentId(tab.id)} aria-labelledby={tabId(tab.id)} tabIndex={0}
             hidden={tab.id !== activeId} className={cn("h-full min-h-0 overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40", tab.id !== activeId && "hidden")}>
-            <TabContent tab={tab} conversation={conversation} />
+            {/* Kept mounted across citations to the same file: a new revision scrolls to the cited page. */}
+            <MaterialPreview materialId={tab.materialId} page={tab.page} revision={tab.revision} />
           </section>
         ))}
         {dragWidth !== null && <div className="absolute inset-0 cursor-col-resize" />}

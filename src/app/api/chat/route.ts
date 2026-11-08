@@ -55,9 +55,12 @@ export async function POST(req: Request) {
             output_config: { effort: "high" },
             thinking: {
               type: "adaptive",
-              // Keep reasoning hidden: a tutor's private plan often contains the answer
-              // it is deliberately guiding the student toward.
-              display: "omitted",
+              // Summaries let the browser name each step of Ainsley's thinking for the student,
+              // the way Grok shows its own (/api/thought). The summaries themselves are never
+              // shown: a tutor's private plan often contains the answer it is deliberately
+              // guiding the student toward, so a step's name says what Ainsley is doing, not
+              // what it concluded.
+              display: "summarized",
               // If a replayed thinking block ever fails the history check (say, a file the
               // student deleted), drop it instead of failing the request.
               block_binding: { prefix_mismatch_behavior: "drop_block" },
@@ -103,9 +106,13 @@ export async function POST(req: Request) {
             }
           } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
             emitText(event.delta.text);
+          } else if (event.type === "content_block_delta" && event.delta.type === "thinking_delta") {
+            if (event.delta.thinking) send({ type: "thinking", text: event.delta.thinking });
           } else if (event.type === "content_block_stop") {
             const block = apiStream.currentMessage?.content[event.index];
-            if (block && (block.type === "tool_use" || block.type === "server_tool_use")) {
+            if (block?.type === "thinking") {
+              send({ type: "thinking_stop" });
+            } else if (block && (block.type === "tool_use" || block.type === "server_tool_use")) {
               const input =
                 block.input && typeof block.input === "object" ? (block.input as Record<string, unknown>) : {};
               send({ type: "tool", id: block.id, name: block.name, input });

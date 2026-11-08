@@ -1,10 +1,10 @@
 "use client";
 
-import { BookOpen, ChevronRight, ClipboardCheck, FileSearch, Globe, Layers, Link2, LoaderCircle } from "lucide-react";
+import { BookOpen, Globe } from "lucide-react";
 import { createContext, useContext, useState } from "react";
 import { parseMarkerHref } from "@/lib/citations";
 import { pageUnit, useLibrary, type LibraryState } from "@/lib/library";
-import type { Activity, MaterialKind, Source } from "@/lib/types";
+import type { MaterialKind, Source } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { FileKindIcon } from "./attachments";
 import { useWorkspace } from "./workspace-context";
@@ -208,109 +208,6 @@ export function SourcesContent({ sources }: { sources: Source[] }) {
           </h3>
           {list(more)}
         </section>
-      )}
-    </div>
-  );
-}
-
-// ---------- What Ainsley looked up ----------
-
-const ICONS = {
-  materials: BookOpen,
-  open: FileSearch,
-  module: Layers,
-  evaluate: ClipboardCheck,
-  web_search: Globe,
-  web_fetch: Link2,
-} as const;
-
-/** Kinds that work with the student's own course and answers (the accent icon); the web is subtle. */
-const OWN = new Set<Activity["kind"]>(["materials", "open", "module", "evaluate"]);
-
-function describeActivity(a: Activity) {
-  switch (a.kind) {
-    case "materials":
-      return `Searched your materials for “${a.label}”`;
-    case "open":
-      return `Opened ${a.label}`;
-    case "module":
-      return `Read “${a.label}” from your course`;
-    case "evaluate":
-      return "Checked your answer";
-    case "web_search":
-      return `Searched the web for “${a.label}”`;
-    case "web_fetch":
-      return `Read ${a.label}`;
-  }
-}
-
-/** Result filtering can repeat an identical search; show it once. Each answer check stands alone. */
-function dedupe(activity: Activity[]) {
-  const seen = new Set<string>();
-  return activity.filter((a) => {
-    const key = a.kind === "evaluate" ? a.id : `${a.kind}:${a.label}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-/** One line for everything Ainsley did, e.g. "Checked your materials and your answer". */
-function summarize(activity: Activity[]) {
-  const kinds = new Set(activity.map((a) => a.kind));
-  const own = kinds.has("materials") || kinds.has("open") || kinds.has("module");
-  const web = kinds.has("web_search") || kinds.has("web_fetch");
-  const answer = kinds.has("evaluate");
-  const parts = [own && "your materials", web && "the web", answer && "your answer"].filter(
-    (p): p is string => Boolean(p),
-  );
-  if (parts.length > 1) {
-    return `Checked ${parts.slice(0, -1).join(", ")}${parts.length > 2 ? "," : ""} and ${parts.at(-1)}`;
-  }
-  if (answer) return "Checked your answer";
-  if (own) {
-    if (kinds.has("materials")) return "Searched your materials";
-    return kinds.has("module") ? "Read your course materials" : "Opened your materials";
-  }
-  return kinds.has("web_search") ? "Searched the web" : "Read a web page";
-}
-
-/** What Ainsley looked up: live while it works, folded into one line afterwards. */
-export function ActivityList({ activity, live }: { activity: Activity[]; live: boolean }) {
-  const [open, setOpen] = useState(false);
-  const expanded = live || open;
-  return (
-    <div className="flex flex-col gap-1.5">
-      {!live && (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          className="-ml-1 flex w-fit items-center gap-1.5 rounded-lg px-1 py-0.5 text-sm text-subtle transition-colors hover:text-muted"
-        >
-          {summarize(activity)}
-          <span className="text-subtle/70">· {dedupe(activity).length}</span>
-          <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-        </button>
-      )}
-      {expanded && (
-        <ul className={cn("flex flex-col gap-1.5", !live && "border-l border-line pl-3")}>
-          {dedupe(activity).map((a) => {
-            const Icon = ICONS[a.kind];
-            const running = a.status === "running";
-            return (
-              <li key={a.id} className="flex min-w-0 items-center gap-2 text-sm">
-                {running ? (
-                  <LoaderCircle className="size-3.5 shrink-0 animate-spin text-accent-soft" />
-                ) : (
-                  <Icon className={cn("size-3.5 shrink-0", OWN.has(a.kind) ? "text-accent-soft" : "text-subtle")} />
-                )}
-                <span className={cn("min-w-0 truncate", running ? "shimmer" : "text-muted")}>{describeActivity(a)}</span>
-                {a.detail && <span className={cn("shrink-0 text-xs", a.status === "error" ? "text-danger" : "text-subtle")}>{a.detail}</span>}
-              </li>
-            );
-          })}
-        </ul>
       )}
     </div>
   );
