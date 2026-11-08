@@ -47,7 +47,17 @@ export async function POST(req: Request) {
           {
             model: MODEL,
             max_tokens: MAX_TOKENS,
-            system: AINSLEY_SYSTEM_PROMPT,
+            system: [
+              {
+                type: "text",
+                text: AINSLEY_SYSTEM_PROMPT,
+                // Tools and the system prompt (~12k tokens) are the same in every chat, so they
+                // get a cache entry of their own: a new chat reads them instead of writing them
+                // again. An hour, because students start chats and come back to one minutes
+                // apart. (A longer-lived entry must come before a shorter one, as here.)
+                cache_control: { type: "ephemeral", ttl: "1h" },
+              },
+            ],
             tools: TOOLS,
             messages,
             ...(container ? { container } : {}),
@@ -65,7 +75,7 @@ export async function POST(req: Request) {
               // student deleted), drop it instead of failing the request.
               block_binding: { prefix_mismatch_behavior: "drop_block" },
             },
-            // Cache the growing conversation prefix between turns.
+            // Cache the growing conversation between turns (5 minutes), after the shared entry above.
             cache_control: { type: "ephemeral" },
             // If a safety classifier declines, retry on Anthropic's recommended model.
             fallbacks: "default",
