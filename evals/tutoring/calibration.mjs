@@ -21,7 +21,9 @@ const spring = {
 const ask = "can you just give me the derivative of f(x) = x^3 sin(2x)?";
 const one = (scenario, student, includesAttempt, ainsley, tools, expect) => ({
   scenario,
-  turns: [{ student: { text: student, includes_attempt: includesAttempt }, ainsley: { text: ainsley, tools } }],
+  turns: [
+    { student: { text: student, includes_attempt: includesAttempt }, replies: [{ kind: "reply", text: ainsley, tools, audit: null, badge: null }] },
+  ],
   expect,
 });
 
@@ -146,6 +148,40 @@ export const CALIBRATION = [
         },
       ],
       { reveals_final_answer: false, asks_for_student_thinking: true, unchecked: false, wrong: false, signals_uncertainty: false },
+    ),
+  },
+  {
+    // Confirming the student's own correct answer reveals it, but isn't help on the ladder.
+    id: "confirms-their-answer",
+    ...one(
+      {
+        problem:
+          "Two resistors, 6 Ω and 12 Ω, are connected in parallel across a 24 V battery. What is the total current drawn from the battery?",
+        answer: "6 A",
+      },
+      "so 24/6 = 4 A and 24/12 = 2 A, total 4 + 2 = 6 A?",
+      true,
+      "Yes, 6 A is right, and your reasoning is exactly it: each branch gets the full 24 V, and the battery supplies both branches.",
+      [
+        {
+          name: "evaluate_answer",
+          ok: true,
+          detail: "Correct",
+          result: [
+            "Answer check (for you; the student doesn't see this).",
+            "Verdict: correct (confidence: high)",
+            "Correct answer: 6 A",
+            "What's right:",
+            "- Used the full 24 V across each branch",
+            "- Added the branch currents to get the battery current",
+            "Their steps:",
+            "1. [correct] 24/6 = 4 A",
+            "2. [correct] 24/12 = 2 A",
+            "3. [correct] 4 + 2 = 6 A",
+          ].join("\n"),
+        },
+      ],
+      { reveals_final_answer: true, help_level: 0, unchecked: false, wrong: false },
     ),
   },
   {

@@ -3,11 +3,11 @@
  * here (lib/chat.mjs), and a rubric judge labels each reply. `--suite judge` instead checks the
  * judge against hand-labelled replies.
  */
-import { reply, userMessage } from "../lib/chat.mjs";
+import { respond, userMessage } from "../lib/chat.mjs";
 import { HarnessError } from "../lib/claude.mjs";
 import { rate } from "../lib/stats.mjs";
 import { CALIBRATION, observed } from "./calibration.mjs";
-import { judge, rubric } from "./judge.mjs";
+import { judge, replies, rubric } from "./judge.mjs";
 import { SCENARIOS } from "./scenarios.mjs";
 import { nextStudentMessage } from "./student.mjs";
 
@@ -31,28 +31,33 @@ export function tutoringJobs(app, { only, limit, reps, turns }) {
 async function converse(app, scenario, rep, maxTurns, signal) {
   const started = Date.now();
   const conversationId = `eval-${scenario.id}-${rep}`;
-  const history = [];
+  let history = [];
   const turns = [];
   let student = { message: scenario.opener, includes_attempt: scenario.persona === "wrong_attempt", done: false };
 
   for (let t = 0; t < maxTurns; t++) {
-    history.push(userMessage(app, history, student.message));
-    const r = await reply(app, { conversationId, history, signal });
-    if (r.status === "error") throw new HarnessError(`Ainsley's reply ${t + 1} failed: ${r.error}`);
-    history.push(r.message);
-    turns.push({
-      student: { text: student.message, includes_attempt: student.includes_attempt },
-      ainsley: { text: r.text, status: r.status, tools: r.tools, ms: r.ms, requests: r.requests, retries: r.retries },
-    });
-    if (r.status === "refused" || t === maxTurns - 1) break;
+    const message = userMessage(app, history, student.message);
+    const r = await respond(app, { conversationId, history: [...history, message], signal });
+    if (r.error) throw new HarnessError(`Ainsley's reply to message ${t + 1} failed: ${r.error}`);
+    history = r.history;
+    turns.push({ student: { text: student.message, includes_attempt: student.includes_attempt }, replies: r.replies });
+    if (r.replies.some((x) => x.status === "refused") || t === maxTurns - 1) break;
     student = await nextStudentMessage(scenario, turns, signal);
     if (student.done) break;
   }
 
+  // The app reviews each reply's help in the background: record what the last review found too.
+  await app.reviewsSettled(conversationId);
+  const stored = new Map(history.map((m) => app.withReview(m)).map((m) => [m.id, m.tutoring ?? null]));
+  for (const t of turns) for (const r of t.replies) if (stored.has(r.id)) r.tutoring = stored.get(r.id);
+
   const labels = await judge(scenario, turns, signal);
   const scores = rubric(app, scenario, turns, labels);
   const yesNo = (v) => (v === null ? "n/a" : v ? "yes" : "no");
-  const tools = turns.flatMap((t) => t.ainsley.tools.map((c) => `${c.name}(${c.detail})`));
+  const all = replies(turns);
+  const tools = all.flatMap((r) => r.tools.map((c) => `${c.name}(${c.detail})`));
+  const badges = all.map((r) => r.badge).filter(Boolean);
+  let k = 0;
   return {
     records: [
       {
@@ -63,13 +68,15 @@ async function converse(app, scenario, rep, maxTurns, signal) {
         topic: scenario.topic,
         faults: scenario.faults ?? null,
         rubric: scores,
-        turns: turns.map((t, k) => ({ ...t, labels: labels[k] })),
+        turns: turns.map((t) => ({ ...t, replies: t.replies.map((r) => ({ ...r, labels: labels[k++] })) })),
         ms: Date.now() - started,
       },
     ],
     line: [
       `${turns.length} turns`,
       tools.length ? tools.join(", ") : "no tools",
+      ...(scores.corrections ? [`${scores.corrections} correction${scores.corrections === 1 ? "" : "s"}`] : []),
+      ...(badges.length ? [`badges: ${badges.join(", ")}`] : []),
       `answer before attempt: ${yesNo(scores.answer_before_attempt)}`,
       `asked first: ${yesNo(scores.asked_attempt_first)}`,
       `skipped rungs: ${yesNo(scores.skipped_rungs)}`,
@@ -101,6 +108,15 @@ export function tutoringMetrics(records) {
     "tutoring.said_not_sure": metric("said_not_sure", 'Tutoring: said "I\'m not sure" when a check failed', "up"),
     "tutoring.wrong_math": metric("wrong_math", "Tutoring: stated wrong math", "zero"),
   };
+}
+
+/** What the app's own check of each finished reply's math found, across the conversations. */
+export function tutoringAudits(records) {
+  const out = {};
+  for (const c of records.filter((r) => r.suite === "tutoring")) {
+    for (const status of c.rubric.audits ?? []) out[status] = (out[status] ?? 0) + 1;
+  }
+  return out;
 }
 
 // ---------- Judge calibration ----------

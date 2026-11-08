@@ -103,9 +103,11 @@ export function renderReport({ summary, records = [], errors = [], previous = nu
 
   if (statuses) {
     const show = (t) => Object.entries(t).map(([k, n]) => `${k} ${n}`).join(" · ") || "—";
-    lines.push(`Solver statuses: ${show(statuses.solver)}`);
-    lines.push(`Ill-posed statuses: ${show(statuses.illPosed)}`);
-    lines.push(`Checker verdicts: ${show(statuses.checkerVerdicts)}`, "");
+    if (statuses.solver) lines.push(`Solver statuses: ${show(statuses.solver)}`);
+    if (statuses.illPosed) lines.push(`Ill-posed statuses: ${show(statuses.illPosed)}`);
+    if (statuses.checkerVerdicts) lines.push(`Checker verdicts: ${show(statuses.checkerVerdicts)}`);
+    if (statuses.replyAudits) lines.push(`App's check of each reply's math: ${show(statuses.replyAudits)}`);
+    if (Object.keys(statuses).length) lines.push("");
   }
 
   const look = casesToLook(records, errors);

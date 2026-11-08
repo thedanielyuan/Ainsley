@@ -13,7 +13,7 @@
  *   since they measure the network rather than Ainsley; a trial can inject a failure instead.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import { registerHooks } from "node:module";
@@ -59,19 +59,19 @@ function sourceFile(specifier, parentURL) {
 }
 
 /**
- * storage.ts with every export replaced: solved problems live in the current trial's map, lists
- * load empty, and everything else does nothing. Generated from the file's own exports, so a new
- * export there can't break the import graph here.
+ * storage.ts with every export replaced: solved problems live in the current trial's map, whole
+ * stores (loadAll) load empty, and everything else does nothing. Generated from the file's own
+ * exports, so a new export there can't break the import graph here.
  */
 function storageShim() {
-  const names = [
-    ...readFileSync(STORAGE, "utf8").matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let)\s+([A-Za-z_$][\w$]*)/gm),
-  ].map((m) => m[1]);
+  const exports = [
+    ...readFileSync(STORAGE, "utf8").matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let)\s+([A-Za-z_$][\w$]*)(.*)$/gm),
+  ];
   const lines = [`const trial = () => globalThis[Symbol.for("ainsley.evals.trial")]();`];
-  for (const name of names) {
+  for (const [, name, rest] of exports) {
     if (name === "loadProblem") lines.push("export async function loadProblem(id) { return trial()?.problems.get(id); }");
     else if (name === "saveProblem") lines.push("export async function saveProblem(p) { trial()?.problems.set(p.id, p); }");
-    else if (/^load.*s$/.test(name)) lines.push(`export async function ${name}() { return []; }`);
+    else if (rest.includes("loadAll<")) lines.push(`export async function ${name}() { return []; }`);
     else lines.push(`export async function ${name}() { return undefined; }`);
   }
   return lines.join("\n");
@@ -94,7 +94,8 @@ registerHooks({
 let base = null;
 /** Ceiling on any one request to the app, so a hung stream can't hold a worker forever. */
 const REQUEST_LIMIT_MS = 20 * 60_000;
-const RETRIED_ROUTES = new Set(["/api/solve", "/api/evaluate"]);
+// Routes that answer with a small JSON body once the work is done (not a stream).
+const RETRIED_ROUTES = new Set(["/api/solve", "/api/evaluate", "/api/check", "/api/audit", "/api/review"]);
 const MAX_RETRIES = 2;
 // What /api/* report (describeError in src/lib/server/anthropic.ts) when the Claude API itself failed.
 export const TRANSIENT = /too many requests|overloaded|couldn't reach the claude api|claude api error/i;
@@ -190,22 +191,65 @@ export async function postJson(route, body, signal) {
   return { status: res.status, ok: res.ok, data };
 }
 
-/** Checks the dev server answers at all (any status), with a clear message if it doesn't. */
+/** The /api routes the browser's code calls, from the string literals in src/lib. */
+function appRoutes() {
+  const routes = new Set();
+  const visit = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else if (entry.name.endsWith(".ts")) {
+        for (const m of readFileSync(file, "utf8").matchAll(/["'`](\/api\/[\w/-]+)["'`]/g)) routes.add(m[1]);
+      }
+    }
+  };
+  visit(path.join(SRC, "lib"));
+  return [...routes].sort();
+}
+
+/**
+ * Checks the dev server is up and knows every route the browser's code calls: an empty POST gets
+ * a 400 from a route that exists. A 404 usually means a dev server started before the route was
+ * added (it doesn't always pick up new route folders), which would quietly change what's measured.
+ */
 export async function checkServer(url) {
-  try {
-    const res = await request(new URL("/api/chat", url), { method: "GET" }, AbortSignal.timeout(120_000));
-    await res.body?.cancel();
-  } catch (err) {
-    throw new Error(
-      `Can't reach Ainsley at ${url} (${err.code ?? err.message}). Start it with \`npm run dev\`, or pass --url.`,
-    );
+  for (const route of appRoutes()) {
+    let status;
+    try {
+      const res = await request(
+        new URL(route, url),
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+        AbortSignal.timeout(120_000),
+      );
+      status = res.status;
+      await res.body?.cancel();
+    } catch (err) {
+      throw new Error(`Can't reach Ainsley at ${url} (${err.code ?? err.message}). Start it with \`npm run dev\`, or pass --url.`);
+    }
+    if (status === 404) {
+      throw new Error(`The app at ${url} has no ${route}, which the browser's code calls. Restart the dev server so it picks up new routes.`);
+    }
   }
 }
 
 /** Points the app's fetches at `url` and imports the browser-side modules the evals drive. */
 export async function loadApp(url) {
   base = new URL(url);
-  const [agentTools, chatClient, courseContext, library, citations, solution, answerCheck, toolNames] = await Promise.all([
+  const [
+    agentTools,
+    chatClient,
+    courseContext,
+    library,
+    citations,
+    solution,
+    answerCheck,
+    toolNames,
+    tutoring,
+    tutoringReview,
+    mathCheck,
+    replyCheck,
+    simulation,
+  ] = await Promise.all([
     import("@/lib/agent-tools"),
     import("@/lib/chat-client"),
     import("@/lib/course-context"),
@@ -214,20 +258,41 @@ export async function loadApp(url) {
     import("@/lib/solution"),
     import("@/lib/answer-check"),
     import("@/lib/tool-names"),
+    import("@/lib/tutoring"),
+    import("@/lib/tutoring-review"),
+    import("@/lib/math-check"),
+    import("@/lib/reply-check"),
+    import("@/lib/simulation/marker"),
   ]);
   await library.loadLibrary();
   return {
     runTool: agentTools.runTool,
+    toolActivity: agentTools.toolActivity,
     streamChat: chatClient.streamChat,
     toApiMessages: chatClient.toApiMessages,
     closeTurns: chatClient.closeTurns,
+    correctionPrefix: chatClient.correctionPrefix,
     buildContext: courseContext.buildContext,
     lastContextState: courseContext.lastContextState,
     getLibrary: library.getLibrary,
     summarizeReply: citations.summarizeReply,
+    TurnTutor: tutoring.TurnTutor,
+    reviewsSettled: tutoringReview.reviewsSettled,
+    startReview: tutoringReview.startReview,
+    withReview: tutoringReview.withReview,
+    checkReply: replyCheck.checkReply,
+    auditStatus: mathCheck.auditStatus,
+    auditLabel: mathCheck.auditLabel,
+    containsMath: mathCheck.containsMath,
+    correctionRequest: mathCheck.correctionRequest,
+    unsettledAnswers: mathCheck.unsettledAnswers,
+    simulationMarker: simulation.simulationMarker,
+    withoutSimulations: simulation.withoutSimulations,
     SOLUTION_LABELS: solution.SOLUTION_LABELS,
     VERDICT_LABELS: answerCheck.VERDICT_LABELS,
     SOLVE_TOOL: toolNames.SOLVE_TOOL,
     EVALUATE_TOOL: toolNames.EVALUATE_TOOL,
+    CHECK_TOOL: toolNames.CHECK_TOOL,
+    SIMULATION_TOOL: toolNames.SIMULATION_TOOL,
   };
 }
