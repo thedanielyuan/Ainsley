@@ -1,3 +1,11 @@
+## Commands
+
+- Install: `npm ci`. Configure: `cp .env.example .env.local`, then set `ANTHROPIC_API_KEY`.
+- Run: `npm run dev` (http://localhost:3000).
+- Before finishing: `npm run lint` and `npx tsc --noEmit`. CI's required check, **Lint and build**, runs `npm ci`, `npm run lint` and `npm run build`.
+- Evals: with the app running, `npm run eval` measures Ainsley against its guiding principles (solver and checker accuracy on known problems, and tutoring behavior with simulated students) and prints a summary table. Run it before and after changing the system prompt, tools, solver, checker or tutoring policy, add `--compare evals/results/<earlier run>` for the before/after column, and put both tables in the PR; `--suite math` or `--suite tutoring` runs half. It calls Claude (a full run costs about $10 and takes about 5 minutes), so it stays out of CI. Flags and how to read it: `evals/README.md`. `node --test "evals/**/*.test.mjs"` checks its answer key offline.
+- `node --test tests/slide-preview.test.mjs` checks slide conversion against a running dev server (`AINSLEY_TEST_URL` for another host) and needs LibreOffice.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know
