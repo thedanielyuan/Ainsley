@@ -114,8 +114,10 @@ async function runSolve(
 
   // The same problem in the same course is worked out once.
   const id = await problemId(input, ctx.courseId);
+  // The tutoring policy tracks the problem from here (src/lib/tutoring.ts), unless it can't be solved.
+  const tracked = (s: VerifiedSolution) => (s.status === "cannot_solve" ? {} : { problem: { id, text: input.problem } });
   const saved = await savedSolution(id);
-  if (saved) return answered(call.id, formatSolution(id, saved), SOLUTION_LABELS[saved.status]);
+  if (saved) return { ...answered(call.id, formatSolution(id, saved), SOLUTION_LABELS[saved.status]), ...tracked(saved) };
 
   const fallback =
     "Nothing was verified. Check what you'd tell the student with check_math, and tell them you're not sure of anything it can't verify.";
@@ -131,7 +133,7 @@ async function runSolve(
   if (!solution) return answered(call.id, `The solvers declined to work this problem. ${fallback}`, "Couldn't solve");
 
   await saveSolution(id, ctx.courseId, input.problem, solution);
-  return answered(call.id, formatSolution(id, solution), SOLUTION_LABELS[solution.status]);
+  return { ...answered(call.id, formatSolution(id, solution), SOLUTION_LABELS[solution.status]), ...tracked(solution) };
 }
 
 const EVALUATE_FALLBACK =
@@ -172,7 +174,10 @@ async function runEvaluate(
     return "";
   });
   const text = note + content + (prerequisite ? `\n\n${prerequisite}` : "");
-  return answered(call.id, text, VERDICT_LABELS[verdict] ?? "Checked");
+  // The tutoring policy counts this as their attempt at the problem: the one solve_problem gave, or
+  // this problem as written (the id solve_problem would give it).
+  const id = input.problem_id ?? (await problemId({ problem: input.problem, reference: input.reference }, ctx.courseId));
+  return { ...answered(call.id, text, VERDICT_LABELS[verdict] ?? "Checked"), problem: { id, text: input.problem, verdict } };
 }
 
 async function runTrace(

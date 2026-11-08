@@ -254,6 +254,43 @@ export interface MathAudit {
   corrected?: boolean;
 }
 
+// ---------- Tutoring policy (src/lib/tutoring.ts) ----------
+
+/** A rung of the help ladder, from least help to most: see HELP_RUNGS. */
+export type HelpRung = "nudge" | "hint" | "step" | "example" | "solution";
+
+/** Something a reply's tool calls established about a problem. */
+export type TutoringEvent =
+  /** solve_problem worked it out. `example`: a similar problem for a worked example, not one the student is on. */
+  | { type: "solved"; problemId: string; problem: string; example?: boolean }
+  /** evaluate_answer checked the student's work on it: an attempt. */
+  | { type: "checked"; problemId: string; verdict: AnswerVerdict; problem?: string };
+
+/** What the tutoring policy recorded for one of Ainsley's replies; the per-problem state is folded from these. */
+export interface ReplyTutoring {
+  events: TutoringEvent[];
+  /** The problem in progress when the reply ended. */
+  problemId?: string;
+  /** The most help the policy allowed on it this turn. */
+  allowed?: HelpRung;
+  /**
+   * The most help the reply gave on it, from the review after it (/api/review); null for none.
+   * Unset until reviewed: a reply that couldn't be reviewed counts as having used `allowed`.
+   */
+  used?: HelpRung | null;
+  /** The reply stated the problem's final answer before the student had attempted it. */
+  leak?: boolean;
+}
+
+/** Result of POST /api/review. */
+export interface ReviewResponse {
+  /** False when the reviewer couldn't rate the reply (then `used` is unset). */
+  reviewed: boolean;
+  used?: HelpRung | null;
+  leak: boolean;
+  error?: string;
+}
+
 /** `quotes`: the distinct passages Ainsley cited from it, shown in the source details in chat. */
 export type Source =
   | { type: "material"; materialId: string; title: string; page?: number; quotes?: string[] }
@@ -276,6 +313,8 @@ export interface ChatMessage {
   /** A system message sent right after this message: course context, or what changed in it. */
   context?: string;
   contextState?: ContextState;
+  /** The tutoring policy for this turn, sent in the same system message after the course context. */
+  policy?: string;
 
   // ---- Ainsley's replies ----
   /** The full API transcript of this reply, replayed unchanged on later requests. */
@@ -299,6 +338,8 @@ export interface ChatMessage {
    * system message, replayed unchanged like everything else.
    */
   correction?: { of: string; prompt: string; note: string };
+  /** What the tutoring policy recorded for this reply. */
+  tutoring?: ReplyTutoring;
 }
 
 export interface Conversation {
