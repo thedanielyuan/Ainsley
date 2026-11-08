@@ -32,7 +32,14 @@ For a before/after: run it on the base, change the code (the dev server reloads)
 
 ## Cost and time
 
-A full run (42 cases, four at a time) takes about 10 minutes and costs about $12. Most of that is the app's own Ainsley AI calls: each solve runs two solvers (about $0.06 each, more when the verifier has to settle a disagreement), each answer check is about $0.08, and each request to `/api/chat` about $0.02 with the system prompt cached; the fast tier's checks of claims, replies and help add little. The simulated students and the judge add about $1. `--only` and `--limit` cut a run down for iteration.
+A full run (both suites, four cases at a time) takes about 10 minutes and costs about $12; one suite costs $4–8. Most of that is the app's own Ainsley AI calls. Measured on the tutoring suite before the code execution calls were cached: each answer check about $0.07, each solve about $0.12 for its two solvers ($0.21 when the verifier settles a disagreement), and each request to `/api/chat` about $0.016 with the system prompt and conversation cached; the fast tier's checks of claims, replies and help add little. The simulated students and the judge add about $1.
+
+Runs add up: a day of parallel sessions each running their own baselines and re-runs cost over $100. To keep it down:
+
+- Iterate with `--only`, `--limit` and `--turns 2`, and run a whole suite once, for the PR's after table.
+- Reuse baselines: save a run of main with `--out evals/results/main-<sha>-<suite>` and compare every change made on that commit against it, from any checkout (`git worktree list` shows them).
+- `--reps n` costs n runs: use it only when a decision hinges on a difference inside the noise band. `--rejudge` re-scores a saved run for the judge's cost alone.
+- To see eval spend apart from everything else in the Console, give the evals an API key of their own and set `ANTHROPIC_API_KEY` to it in the environment of both the dev server they run against and `npm run eval` (the environment wins over `.env.local`).
 
 ## What it measures
 

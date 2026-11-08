@@ -44,6 +44,10 @@ export async function runCodeAgent(opts: {
           tools: [{ type: "code_execution_20260521", name: "code_execution" }],
           messages,
           ...(container ? { container } : {}),
+          // Each round of code execution (and each resume after `pause_turn`) sends the call so far
+          // again: cached, those rounds read it at a twentieth of the input price on the reasoning
+          // tier instead of paying full price for it every time. Five minutes is plenty for one call.
+          cache_control: { type: "ephemeral" },
           // These have to be right: a wrong solution or verdict teaches the wrong thing.
           output_config: { effort: opts.effort ?? "high", format: { type: "json_schema", schema: opts.schema } },
           thinking: { type: "adaptive", display: "omitted" },
@@ -82,6 +86,7 @@ function logUsage(label: string, message: Anthropic.Beta.BetaMessage) {
   if (process.env.NODE_ENV === "production") return;
   const u = message.usage;
   console.log(
-    `[ainsley] ${label} ${message.model} stop=${message.stop_reason} input=${u.input_tokens} output=${u.output_tokens}`,
+    `[ainsley] ${label} ${message.model} stop=${message.stop_reason} input=${u.input_tokens} ` +
+      `cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} output=${u.output_tokens}`,
   );
 }
