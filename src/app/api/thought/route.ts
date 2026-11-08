@@ -1,4 +1,4 @@
-import { describeError } from "@/lib/server/anthropic";
+import { describeError } from "@/lib/server/ainsley-ai";
 import { titleThought } from "@/lib/server/thought-title";
 
 const MAX_TEXT = 8_000;

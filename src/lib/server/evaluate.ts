@@ -5,7 +5,7 @@ import type { AnswerVerdict, ApiBlock, CheckedConcept, VerifiedSolution } from "
 import { runCodeAgent } from "./code-agent";
 
 /**
- * The checker behind Ainsley's evaluate_answer tool: a separate Claude call with no stake in the
+ * The checker behind Ainsley's evaluate_answer tool: a separate Ainsley AI call with no stake in the
  * tutoring conversation. It marks each step of the student's working, verifies what it can by
  * running code, and diagnoses the first error; Ainsley turns that into feedback for the student.
  * When Ainsley worked the problem out first (solve_problem), the checker starts from that

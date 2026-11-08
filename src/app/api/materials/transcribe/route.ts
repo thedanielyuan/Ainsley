@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { describeError } from "@/lib/server/anthropic";
+import { describeError } from "@/lib/server/ainsley-ai";
 import { extractFile, UnsupportedFileError } from "@/lib/server/extract";
 import { transcribeImage, transcribePdf } from "@/lib/server/transcribe";
 import type { MaterialPage } from "@/lib/types";

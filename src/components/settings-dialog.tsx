@@ -10,7 +10,7 @@ import { Avatar } from "./ui";
 
 type SectionKey = "profile" | "appearance" | "shortcuts" | "data";
 
-// Grouped like Grok's settings: a labelled list on the left, the chosen section on the right.
+// Grouped: a labelled list on the left, the chosen section on the right.
 const SECTIONS: Array<{ group: string; items: Array<{ key: SectionKey; label: string; Icon: LucideIcon }> }> = [
   {
     group: "General",
@@ -35,7 +35,7 @@ const SHORTCUTS: Array<[string, string[]]> = [
 const OUTLINE_BUTTON =
   "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border border-ink/10 px-2.5 text-sm font-medium transition-colors hover:bg-ink/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
-/** The student's settings, laid out like Grok's: profile, appearance, shortcuts and their data. */
+/** The student's settings: profile, appearance, shortcuts and their data. */
 export function SettingsDialog({
   onDeleteAll,
   onClearKnowledge,
@@ -299,7 +299,7 @@ function moveRadio<T extends string>(e: KeyboardEvent<HTMLElement>, keys: readon
   e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
 }
 
-// Claude's backgrounds, with the sidebar's step from the page a little stronger so it shows at this size.
+// Ainsley's backgrounds, with the sidebar's step from the page a little stronger so it shows at this size.
 const PREVIEW_COLORS = {
   light: { bg: "#ffffff", side: "#f1f1f1", line: "#e1e1e1", box: "#ffffff", edge: "#e3e3e3" },
   dark: { bg: "#191919", side: "#242424", line: "#383838", box: "#303030", edge: "#3a3a3a" },

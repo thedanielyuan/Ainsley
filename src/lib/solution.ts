@@ -1,5 +1,5 @@
 import { readTextFields } from "./answer-check";
-import type { SolutionAnswer, SolutionStatus, SolutionStep, VerifiedSolution } from "./types";
+import type { SolutionAnswer, SolutionStatus, SolutionStep, SolvePurpose, VerifiedSolution } from "./types";
 
 /**
  * Shared by the browser (which runs Ainsley's solve_problem calls and saves the solutions),
@@ -32,6 +32,14 @@ export function parseSolveInput(raw: unknown): SolveInput | string {
   if (typeof out === "string") return out;
   if (!out.problem) return "`problem` must be the problem exactly as the student was given it.";
   return out as SolveInput;
+}
+
+const PURPOSES: readonly SolvePurpose[] = ["guide", "example", "practice"];
+
+/** What a solve_problem call says it's for, if it says (the solvers never see it). */
+export function solvePurpose(raw: unknown): SolvePurpose | undefined {
+  const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>).purpose : undefined;
+  return PURPOSES.find((p) => p === value);
 }
 
 // ---------- Shape ----------

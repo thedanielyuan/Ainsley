@@ -517,8 +517,8 @@ const ChatRow = memo(function ChatRow({
 }) {
   const { id, title } = conversation;
   const active = id === activeId;
-  // Like Claude, a chat still answering in the background shimmers its title; the open chat
-  // shows its progress in the conversation instead.
+  // A chat still answering in the background shimmers its title; the open chat shows its
+  // progress in the conversation instead.
   const working = Boolean(streamingIds[id]) && !active;
   const renaming = id === renamingId;
 

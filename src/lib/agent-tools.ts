@@ -6,7 +6,7 @@ import { checkLabel, formatCheck, parseCheckInput } from "./math-check";
 import { parsePrerequisiteMap, parseTraceInput, type TraceResponse } from "./prerequisite-map";
 import { afterCheck, traceReport, traceRequest } from "./prerequisites";
 import { problemId, savedSolution, saveSolution } from "./problems";
-import { formatSolution, parseSolution, parseSolveInput, SOLUTION_LABELS } from "./solution";
+import { formatSolution, parseSolution, parseSolveInput, SOLUTION_LABELS, solvePurpose } from "./solution";
 import {
   CHECK_TOOL,
   EVALUATE_TOOL,
@@ -25,8 +25,8 @@ import type { Activity, CheckResponse, EvaluateResponse, Material, SolveResponse
  * (and the solution is saved here), answer checks to /api/evaluate (and what they show goes into
  * the student's knowledge map), math checks to /api/check, prerequisite maps to
  * /api/prerequisites (and into the knowledge map, with where the student's courses teach each
- * part); a simulation is checked here and drawn in the reply. (Web search and fetch run on
- * Anthropic's side.)
+ * part); a simulation is checked here and drawn in the reply. (Web search and fetch run on the
+ * API's side.)
  */
 
 export interface AgentToolContext extends ToolContext {
@@ -115,8 +115,9 @@ async function runSolve(
   // The same problem in the same course is worked out once.
   const id = await problemId(input, ctx.courseId);
   // The tutoring policy tracks the problem from here (src/lib/tutoring.ts), even when solving fails,
-  // unless it can't be solved as stated.
-  const problem = { id, text: input.problem };
+  // unless it can't be solved as stated; what it's for decides whether it's the student's to solve.
+  const purpose = solvePurpose(call.input);
+  const problem = { id, text: input.problem, ...(purpose ? { purpose } : {}) };
   const tracked = (s: VerifiedSolution) => (s.status === "cannot_solve" ? {} : { problem });
   const saved = await savedSolution(id);
   if (saved) return { ...answered(call.id, formatSolution(id, saved), SOLUTION_LABELS[saved.status]), ...tracked(saved) };
@@ -238,8 +239,11 @@ export function toolActivity(name: string, input: Record<string, unknown>, id: s
     }
     case MODULE_TOOL:
       return { id, kind: "module", label: str(input.module).trim() || "a module", status: "running" };
-    case SOLVE_TOOL:
-      return { id, kind: "solve", label: str(input.problem).replace(/\s+/g, " ").trim(), status: "running" };
+    case SOLVE_TOOL: {
+      const purpose = solvePurpose(input);
+      const label = str(input.problem).replace(/\s+/g, " ").trim();
+      return { id, kind: "solve", label, status: "running", ...(purpose ? { purpose } : {}) };
+    }
     case EVALUATE_TOOL:
       return { id, kind: "evaluate", label: str(input.problem).replace(/\s+/g, " ").trim(), status: "running" };
     case CHECK_TOOL: {

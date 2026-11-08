@@ -1,5 +1,5 @@
 import { parseCheckInput } from "@/lib/math-check";
-import { describeError } from "@/lib/server/anthropic";
+import { describeError } from "@/lib/server/ainsley-ai";
 import { checkClaims } from "@/lib/server/check";
 import type { CheckedClaim, CheckResponse } from "@/lib/types";
 

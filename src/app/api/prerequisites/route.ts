@@ -1,10 +1,10 @@
 import { parseTraceRequest, type TraceResponse } from "@/lib/prerequisite-map";
-import { describeError } from "@/lib/server/anthropic";
+import { describeError } from "@/lib/server/ainsley-ai";
 import { mapPrerequisites } from "@/lib/server/prerequisites";
 
 /**
  * Runs a trace_prerequisites call for the browser, which drives Ainsley's tool loop and keeps the
- * student's knowledge map: a separate Claude call maps what the concept builds on, and the browser
+ * student's knowledge map: a separate Ainsley AI call maps what the concept builds on, and the browser
  * adds the map to the student's knowledge map and finds where their courses teach each part.
  */
 export async function POST(req: Request) {

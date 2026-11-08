@@ -83,7 +83,12 @@ export interface Activity {
   label: string;
   status: "running" | "done" | "error";
   detail?: string;
+  /** A solve: what solve_problem said it was for. */
+  purpose?: SolvePurpose;
 }
+
+/** What a solve_problem call is for: a problem the student is on, a worked example, or a practice question. */
+export type SolvePurpose = "guide" | "example" | "practice";
 
 /** The answer checker's overall judgment of a student's attempt. */
 export type AnswerVerdict = "correct" | "partially_correct" | "incorrect" | "incomplete" | "cannot_evaluate";
@@ -263,9 +268,10 @@ export type HelpRung = "nudge" | "hint" | "step" | "example" | "solution";
 export type TutoringEvent =
   /**
    * solve_problem worked it out (or tried to). `example`: a similar problem for a worked example, not
-   * one the student is on. `replaces`: the problem the student posed earlier that this turned out to be.
+   * one the student is on. `practice`: a practice question Ainsley set, so its answer waits for the
+   * student's. `replaces`: the problem the student posed earlier that this turned out to be.
    */
-  | { type: "solved"; problemId: string; problem: string; example?: boolean; replaces?: string }
+  | { type: "solved"; problemId: string; problem: string; example?: boolean; practice?: boolean; replaces?: string }
   /** evaluate_answer checked the student's work on it: an attempt. */
   | { type: "checked"; problemId: string; verdict: AnswerVerdict; problem?: string }
   /** The review found the reply was about a problem the student brought (folded from ReplyTutoring.posed, not stored). */
@@ -408,7 +414,7 @@ export interface Material {
   size: number;
   /** Pages (PDF), slides (PPTX), or sections (documents). */
   pageCount: number;
-  /** Anthropic Files API id: PDFs and images, which Ainsley can view directly. */
+  /** Files API id: PDFs and images, which Ainsley can view directly. */
   fileId?: string;
   /**
    * Extracted text used for search, and sent in place of files the API can't read (slides, docs).
@@ -456,7 +462,7 @@ export type StreamEvent =
   | { type: "thinking"; text: string }
   /** The thinking block in progress ended. */
   | { type: "thinking_stop" }
-  /** A tool call is complete (client tools run after `done`; server tools run on Anthropic's side). */
+  /** A tool call is complete (client tools run after `done`; server tools run on the API's side). */
   | { type: "tool"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; id: string; ok: boolean; count?: number }
   | {

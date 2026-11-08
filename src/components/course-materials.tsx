@@ -41,9 +41,9 @@ import { Menu, type MenuEntry } from "./menu";
 import { IconButton } from "./ui";
 
 /*
- * A course's materials, the way a Claude project keeps its context: the course page shows one
- * Materials row (what's there, and Add), and the row opens the Materials dialog, a list of the
- * linked folder and the files with a preview beside it.
+ * A course's materials: the course page shows one Materials row (what's there, and Add), and the
+ * row opens the Materials dialog, a list of the linked folder and the files with a preview beside
+ * it.
  */
 
 type Prompt = Omit<React.ComponentProps<typeof PromptDialog>, "onClose">;
@@ -205,8 +205,8 @@ const ADD_BUTTON =
   "inline-flex h-7 shrink-0 items-center rounded-lg px-2.5 text-sm text-fg transition-colors hover:bg-ink/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 /**
- * The course page's Materials row, like the Context row on a Claude project: what the course has,
- * and Add. Clicking it opens the Materials dialog.
+ * The course page's Materials row: what the course has, and Add. Clicking it opens the Materials
+ * dialog.
  */
 export function MaterialsRow({
   course,
@@ -257,9 +257,9 @@ const ROW_MENU =
   "grid size-7 place-items-center rounded-lg text-muted transition-colors hover:bg-ink/[0.08] hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 /**
- * A course's linked folder and files in a dialog, as Claude shows a project's context: search, Add,
- * and a row per file that opens a preview beside the list (in its place on phones). Files dropped
- * anywhere while it's open are added to the course.
+ * A course's linked folder and files in a dialog: search, Add, and a row per file that opens a
+ * preview beside the list (in its place on phones). Files dropped anywhere while it's open are
+ * added to the course.
  */
 export function MaterialsDialog({
   course,

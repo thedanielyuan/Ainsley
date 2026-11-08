@@ -21,7 +21,7 @@ import {
  * browser (where the library, saved solutions and the student's knowledge map live; solving goes
  * on to /api/solve, answer checks to /api/evaluate, math checks to /api/check, prerequisite maps
  * to /api/prerequisites, and a simulation is drawn in the reply); web search and fetch run on
- * Anthropic's side.
+ * the API's side.
  */
 
 // Homework-answer sites: unreliable, and reading their solutions would do the student's
@@ -129,8 +129,14 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
           description:
             "Optional. What their course requires: a method, notation, units, significant figures, or what counts as a complete proof.",
         },
+        purpose: {
+          type: "string",
+          enum: ["guide", "example", "practice"],
+          description:
+            'What it\'s for: "guide" for a problem the student is working on, so your help leads somewhere right; "example" for a similar problem you\'ll work as a worked example; "practice" for a question you\'re setting for the student to answer on their own, which you\'ll set without its answer.',
+        },
       },
-      required: ["problem"],
+      required: ["problem", "purpose"],
       additionalProperties: false,
     },
     eager_input_streaming: true,

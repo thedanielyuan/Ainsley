@@ -1,4 +1,4 @@
-import { describeError } from "@/lib/server/anthropic";
+import { describeError } from "@/lib/server/ainsley-ai";
 import { parseAttachments } from "@/lib/server/attachments";
 import { solveProblem } from "@/lib/server/solve";
 import { parseSolveInput } from "@/lib/solution";

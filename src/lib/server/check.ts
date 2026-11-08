@@ -8,12 +8,13 @@ import { runCodeAgent } from "./code-agent";
  * calls with no stake in the conversation that check each mathematical claim by running code and
  * say whether it's verified, false (with the correct value), or couldn't be checked.
  *
- * Claude Haiku 5.5 runs the checks: on a benchmark of 40 claims with known answers (traps
+ * Ainsley AI's fast tier runs the checks: on a benchmark of 40 claims with known answers (traps
  * included: a divergent integral, a wrong ODE solution, sympy forms that didn't match their
- * claims) it matched Claude Opus 5.5 verdict for verdict, in about 5 seconds for a handful of
- * claims to Opus's 8 and sometimes minutes. A "false" verdict changes what the student is told,
- * so before it counts, Claude Opus 5.5 takes a second look at that claim. Haiku has no
- * server-side fallback: if it declines or fails, Opus runs the whole check instead.
+ * claims) it matched the reasoning tier verdict for verdict, in about 5 seconds for a handful of
+ * claims to the reasoning tier's 8 and sometimes minutes. A "false" verdict changes what the
+ * student is told, so before it counts, the reasoning tier takes a second look at that claim. The
+ * fast tier has no server-side fallback: if it declines or fails, the reasoning tier runs the
+ * whole check instead.
  */
 
 const CHECKER_PROMPT = `You check mathematical claims for Ainsley, an AI tutor for university students, before it states them to a student or after it has. Each claim comes with a sympy expression for what it computes and the value it claims. The tutor tells the student only what you verify, so your verdicts have to be right.
@@ -75,8 +76,6 @@ function claimsText(input: CheckInput): string {
   return [...claims, `<assumptions>\n${input.assumptions || "None given."}\n</assumptions>`].join("\n\n");
 }
 
-const HAIKU = "claude-haiku-5-5";
-
 /** One checking call; null if the model declined (a safety refusal). */
 async function runCheck(
   input: CheckInput,
@@ -90,7 +89,7 @@ async function runCheck(
     content: [{ type: "text", text }],
     schema: schema(opts.reply ? [...STATUSES, "not_stated"] : STATUSES),
     signal,
-    ...(opts.quick ? { model: HAIKU } : {}),
+    ...(opts.quick ? { tier: "fast" as const } : {}),
   });
   if (!data) return null;
 
@@ -118,22 +117,22 @@ const unchecked = (claim: string, why: string): CheckedClaim => ({ claim, status
  */
 export async function checkClaims(input: CheckInput, signal: AbortSignal, reply?: string): Promise<Verdict[]> {
   let first: Verdict[] | null = null;
-  let onOpus = false;
+  let onReasoning = false;
   try {
     first = await runCheck(input, signal, { quick: true });
   } catch (err) {
     if (signal.aborted) throw err;
-    console.warn("[ainsley] quick math check failed; checking on Opus instead:", err);
+    console.warn("[ainsley] quick math check failed; checking on the reasoning tier instead:", err);
   }
   if (!first) {
-    onOpus = true;
+    onReasoning = true;
     first = await runCheck(input, signal, { quick: false });
     if (!first) return input.claims.map((c) => unchecked(c.claim, "The check declined to run."));
   }
 
   const wrong = first.flatMap((v, i) => (v.status === "false" ? [i] : []));
-  // Opus's own verdicts need no second look, unless there's a reply to read them against.
-  if (wrong.length === 0 || (onOpus && !reply)) return first;
+  // The reasoning tier's own verdicts need no second look, unless there's a reply to read them against.
+  if (wrong.length === 0 || (onReasoning && !reply)) return first;
   const subset: CheckInput = { claims: wrong.map((i) => input.claims[i]), assumptions: input.assumptions };
   let second: Verdict[] | null = null;
   try {

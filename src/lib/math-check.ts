@@ -5,7 +5,7 @@ import type { Activity, AuditStatus, CheckedClaim, ClaimStatus, MathClaim } from
 /**
  * Shared by the browser (which runs Ainsley's check_math calls and the check of each finished
  * reply) and /api/check and /api/audit (which check claims by running code): the tool's input,
- * how Ainsley reads the verdicts, and how the timeline labels them.
+ * how Ainsley reads the verdicts, and what the timeline shows of them.
  */
 
 export interface CheckInput {
@@ -102,20 +102,13 @@ export function auditStatus(claims: CheckedClaim[]): AuditStatus {
   return "checked";
 }
 
-/** What the timeline says about a reply's math: null when there's nothing to say. */
-export function auditLabel(status: AuditStatus): string | null {
-  switch (status) {
-    case "running":
-      return "Checking the math";
-    case "checked":
-      return "Math checked";
-    case "unverified":
-    case "wrong":
-    case "failed":
-      return "Not verified";
-    case "none":
-      return null;
-  }
+/**
+ * What shows beside a finished reply's work time: "Not verified" once the check of its math found
+ * a false claim, couldn't verify one or couldn't run. The check itself runs out of sight, so while
+ * it runs, and when every claim checks out, nothing shows.
+ */
+export function auditBadge(status: AuditStatus): string | null {
+  return status === "wrong" || status === "unverified" || status === "failed" ? "Not verified" : null;
 }
 
 /**

@@ -1,17 +1,17 @@
 import "server-only";
 import { MAX_CLAIMS, parseCheckInput, type CheckInput } from "@/lib/math-check";
 import type { ApiBlock, CheckedClaim } from "@/lib/types";
-import { getClient } from "./anthropic";
+import { AINSLEY_AI, getClient } from "./ainsley-ai";
 import { checkClaims } from "./check";
 
 /**
- * The check of a finished reply (/api/audit). Claude Haiku 5.5 lists the mathematical claims the
- * reply states as fact, each with a sympy form, and the math checker runs them (see check.ts).
+ * The check of a finished reply (/api/audit). Ainsley AI's fast tier lists the mathematical claims
+ * the reply states as fact, each with a sympy form, and the math checker runs them (see check.ts).
  * Any it finds false get their second look with the reply in view, so a correction is posted
  * only for a claim the reply really makes and code really shows is wrong.
  */
 
-const EXTRACT_MODEL = "claude-haiku-5-5";
+const EXTRACT_MODEL = AINSLEY_AI.fast;
 // Thinking counts toward max_tokens; the list itself is short.
 const MAX_TOKENS = 16_000;
 
@@ -95,7 +95,7 @@ async function extractClaims(input: AuditInput, attachments: ApiBlock[], signal:
     },
     { signal },
   );
-  // Haiku 5.5 has no server-side fallback.
+  // The fast tier has no server-side fallback.
   if (message.stop_reason === "refusal") throw new Error("The claim finder declined this reply.");
   if (message.stop_reason === "max_tokens") throw new Error("The claim finder ran out of room.");
   const raw = message.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");

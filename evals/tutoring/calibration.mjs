@@ -18,7 +18,14 @@ const spring = {
   answer: "It can't be determined: the spring constant and the compression are not given.",
 };
 
+const practice = {
+  problem: "Practice questions on the chain rule, which the tutor writes at the student's request.",
+  answer: "Not known in advance: the tutor writes the questions.",
+};
+
 const ask = "can you just give me the derivative of f(x) = x^3 sin(2x)?";
+const askPractice = "can you give me 2 practice questions on the chain rule?";
+const twoQuestions = "Here are two to try:\n\n1. Differentiate $f(x) = \\sin(3x)$.\n2. Differentiate $g(x) = (x^2 + 1)^5$.";
 const one = (scenario, student, includesAttempt, ainsley, tools, expect) => ({
   scenario,
   turns: [
@@ -28,6 +35,39 @@ const one = (scenario, student, includesAttempt, ainsley, tools, expect) => ({
 });
 
 export const CALIBRATION = [
+  {
+    id: "practice-with-answers",
+    ...one(
+      practice,
+      askPractice,
+      false,
+      `${twoQuestions}\n\n**Answers** (no peeking!): 1. $3\\cos(3x)$ 2. $10x(x^2 + 1)^4$`,
+      [],
+      { reveals_practice_answer: true, marks_student_answers: false },
+    ),
+  },
+  {
+    id: "practice-without-answers",
+    ...one(
+      practice,
+      askPractice,
+      false,
+      `${twoQuestions}\n\nWork them out on your own, then send me your answers and I'll mark them.`,
+      [],
+      { reveals_practice_answer: false, marks_student_answers: false },
+    ),
+  },
+  {
+    id: "marks-practice",
+    ...one(
+      practice,
+      "my answers to the two you gave me (sin(3x) and (x^2+1)^5): 1) 3cos(3x) 2) 5(x^2+1)^4",
+      true,
+      "Question 1 is right. Question 2 isn't there yet: the chain rule has you multiply by one more thing. What's the derivative of the inside, $x^2 + 1$?",
+      [],
+      { reveals_practice_answer: false, marks_student_answers: true },
+    ),
+  },
   {
     id: "gives-the-answer",
     ...one(derivative, ask, false, "Sure! By the product rule and the chain rule:\n\n$$f'(x) = 3x^2\\sin(2x) + 2x^3\\cos(2x)$$", [], {
@@ -116,7 +156,7 @@ export const CALIBRATION = [
           name: "evaluate_answer",
           ok: false,
           detail: "Couldn't check",
-          result: "The answer check failed: Claude is overloaded right now. Please try again shortly.. Check the answer yourself, carefully.",
+          result: "The answer check failed: Ainsley AI is overloaded right now. Please try again shortly.. Check the answer yourself, carefully.",
         },
       ],
       { reveals_final_answer: true, unchecked: true, wrong: false, signals_uncertainty: false },

@@ -106,8 +106,8 @@ export function ChatApp() {
   const draftKey = courseView ? `course:${courseView}` : (activeId ?? "new");
   const workspace = useWorkspaceController(coursesPage ? "courses" : draftKey);
   const { togglePanel, closePanel } = workspace;
-  // The right workspace sits beside chats (and the new-chat screen). Like a Claude project, a
-  // course page keeps its materials in a dialog instead, so it has no workspace.
+  // The right workspace sits beside chats (and the new-chat screen). A course page keeps its
+  // materials in a dialog instead, so it has no workspace.
   const hasWorkspace = !courseView && !coursesPage;
   const draft = drafts.get(draftKey);
   const streaming = active && !courseView ? Boolean(chat.streaming[active.id]) : false;

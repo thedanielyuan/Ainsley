@@ -3,7 +3,7 @@ import type { ApiBlock } from "@/lib/types";
 
 /**
  * The student's work files sent along with a solve or an answer check (photos and short PDFs on
- * their latest message, see `workAttachments`), validated before they reach Claude.
+ * their latest message, see `workAttachments`), validated before they reach Ainsley AI.
  */
 
 const MAX_ATTACHMENTS = 4;

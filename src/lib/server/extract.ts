@@ -11,7 +11,7 @@ export interface Extracted {
   pageCount: number;
   pages: MaterialPage[];
   scanned?: boolean;
-  /** Bytes to store with the Files API, for files Claude can view directly (PDFs, images). */
+  /** Bytes to store with the Files API, for files Ainsley AI can view directly (PDFs, images). */
   upload?: { data: Buffer; mimeType: string; name: string };
   thumbnail?: string;
 }

@@ -61,6 +61,8 @@ function casesToLook(records, errors) {
         s.unchecked_math && `unchecked math in ${s.replies_with_unchecked_math}/${s.replies} replies`,
         s.said_not_sure === false && "didn't say it wasn't sure after a failed check",
         s.wrong_math && "wrong math",
+        s.practice_answers && "gave the answers to practice questions",
+        s.marked_practice === false && "didn't mark the practice answers",
       ].filter(Boolean);
       if (issues.length) look.push(`tutoring ${r.id}${r.rep > 1 ? ` #${r.rep}` : ""}: ${issues.join(", ")}`);
     }
@@ -80,7 +82,7 @@ export function renderReport({ summary, records = [], errors = [], previous = nu
   lines.push(
     `${meta.cases - meta.notScored} of ${meta.cases} cases scored in ${seconds(meta.durationMs)}` +
       `${meta.notScored ? ` · ${meta.notScored} not scored (infra; excluded)` : ""}` +
-      ` · app requests: ${requests} · harness's own Claude calls ≈ $${meta.harnessUsage.cost.toFixed(2)}`,
+      ` · app requests: ${requests} · harness's own model calls ≈ $${meta.harnessUsage.cost.toFixed(2)}`,
   );
   const fallbacks = (meta.harnessUsage.models ?? []).filter((m) => m !== "claude-opus-5-5");
   if (fallbacks.length) lines.push(`Some of the harness's own calls were served by ${fallbacks.join(", ")} (a safety fallback).`);

@@ -11,9 +11,9 @@ const SUGGESTIONS = [
 ];
 
 /**
- * The new-chat screen, placed like Grok's home. From 640px of chat width (Grok's breakpoint, a
- * container query on this screen) the heading sits at Grok's height and the composer 28px under
- * it; narrower, the heading sits in a centered 450px block and the composer pins to the bottom.
+ * The new-chat screen. From 640px of chat width (a container query on this screen) the heading
+ * sits at a set height and the composer 28px under it; narrower, the heading sits in a centered
+ * 450px block and the composer pins to the bottom.
  */
 export function EmptyState({
   composer,
@@ -25,9 +25,9 @@ export function EmptyState({
   return (
     <div className="@container relative flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto p-2 pb-36 @min-[40rem]:px-4 @min-[40rem]:pb-10 @min-[40rem]:pt-4">
-        {/* Grok puts the heading at 0.8× of half the viewport (less its 64px header allowance)
-            minus 118.4px, measured from the top of the window: its header floats over the page.
-            Ainsley's 56px header takes up room above this screen, so it comes off here too. */}
+        {/* The heading sits at 0.8× of half the viewport (less a 64px header allowance) minus
+            118.4px, measured from the top of the window. Ainsley's 56px header takes up room
+            above this screen, so it comes off here too. */}
         <div className="my-auto flex h-[450px] w-full shrink-0 flex-col items-center gap-6 @min-[40rem]:my-0 @min-[40rem]:h-auto @min-[40rem]:gap-7 @min-[40rem]:pt-[max(0px,calc(0.8*max(50dvh_-_64px,240px)_-_118.4px_-_56px))]">
           {/* "study" draws its underline and catches a passing glint as the screen opens (globals.css). */}
           <h1 className="text-balance px-4 text-center text-[28px] font-semibold leading-9 tracking-[-0.02em] text-fg">
