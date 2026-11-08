@@ -4,6 +4,7 @@ import { Menu as MenuIcon, PanelRight, Paperclip, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { resolveScope } from "@/lib/course-context";
 import { linkFolder, unlinkFolder } from "@/lib/folders";
+import { clearKnowledge } from "@/lib/knowledge";
 import {
   createCourse,
   getLibrary,
@@ -253,6 +254,18 @@ export function ChatApp() {
       onConfirm: removeAll,
     });
   }, [removeAll]);
+
+  const requestClearKnowledge = useCallback(() => {
+    setConfirm({
+      title: "Clear learning record?",
+      description:
+        "Ainsley forgets what your answer checks showed about each concept, and the prerequisite maps it has made, across all your courses. Your chats, courses and materials stay. This can’t be undone.",
+      confirmLabel: "Clear",
+      onConfirm: () => {
+        clearKnowledge().catch((err) => console.error("[ainsley] couldn't clear the learning record:", err));
+      },
+    });
+  }, []);
 
   const requestDeleteCourse = useCallback((id: string) => {
     const request = courseDeleteRequest(id, () => {
@@ -521,7 +534,7 @@ export function ChatApp() {
         />
       )}
       {settingsOpen && (
-        <SettingsDialog onClose={closeSettings} onDeleteAll={requestDeleteAll} />
+        <SettingsDialog onClose={closeSettings} onDeleteAll={requestDeleteAll} onClearKnowledge={requestClearKnowledge} />
       )}
       {picker && (
         <MaterialPickerDialog

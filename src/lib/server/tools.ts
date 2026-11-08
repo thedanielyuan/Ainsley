@@ -1,6 +1,14 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
-import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL, SIMULATION_TOOL, SOLVE_TOOL } from "@/lib/tool-names";
+import {
+  EVALUATE_TOOL,
+  MODULE_TOOL,
+  OPEN_TOOL,
+  PREREQUISITES_TOOL,
+  SEARCH_TOOL,
+  SIMULATION_TOOL,
+  SOLVE_TOOL,
+} from "@/lib/tool-names";
 
 /**
  * Ainsley's tools. The model picks among them by what the student is trying to do (see "Your
@@ -8,8 +16,9 @@ import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL, SIMULATION_TOOL, SO
  *
  * Declared identically on every request, from a chat's first turn: the tool set is part of the
  * prefix that preserved thinking and the prompt cache are bound to. The course tools,
- * solve_problem, evaluate_answer and show_simulation run in the browser (where the library and
- * saved solutions live; solving goes on to /api/solve, answer checks to /api/evaluate, and a
+ * solve_problem, evaluate_answer, show_simulation and trace_prerequisites run in the browser
+ * (where the library, saved solutions and the student's knowledge map live; solving goes on to
+ * /api/solve, answer checks to /api/evaluate, prerequisite maps to /api/prerequisites, and a
  * simulation is drawn in the reply); web search and fetch run on Anthropic's side.
  */
 
@@ -55,10 +64,10 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: OPEN_TOOL,
     description:
-      "Open one of the student's course files by its id from the course context. " +
+      "Open one of the student's course files by its id from the course context, or from a prerequisite map (which can point to a file in another of their courses). " +
       "PDFs up to 100 pages are shown whole — page images plus text — so you can see diagrams, equations, and layout; photos are shown as images; slides and documents return their text. " +
       "For longer files, or to read just part of one, pass `pages` (a scan's pages then come as their transcribed text). " +
-      "Use it when you need a whole problem set or worked example, a figure, or the original of a photo or scan; use search to find things.",
+      "Use it when you need a whole problem set or worked example, a figure, or the original of a photo or scan, or to teach a prerequisite from where their course taught it; use search to find things.",
     input_schema: {
       type: "object",
       properties: {
@@ -331,6 +340,32 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
         },
       },
       required: ["kind", "title"],
+      additionalProperties: false,
+    },
+    eager_input_streaming: true,
+  },
+  {
+    name: PREREQUISITES_TOOL,
+    description:
+      "Map what a concept builds on, to find the earlier gap behind a student's trouble, even one left by another of their courses. " +
+      "Returns, for you: the concept's prerequisites (and theirs, a few levels down); how likely each is to be the gap, judged from what you saw and the student's record on it (how their answers on it went in answer checks across all their courses); a quick diagnostic question for each; and where each is taught in their course materials, by course, file id and page, which you can open with open_course_material. Each map is added to the student's knowledge map, which spans their courses. " +
+      "Use it when the answer check says the first error is in a prerequisite and it looks like a gap rather than a slip; when a student is stuck in a way that points to something earlier (they can't start, or the same kind of mistake keeps coming back); or before a new topic or exam review that builds on something they've found hard. Skip it for a one-off slip, or when you already know what's missing and where they learned it. " +
+      "Takes about 15 to 30 seconds.",
+    input_schema: {
+      type: "object",
+      properties: {
+        concept: {
+          type: "string",
+          description:
+            'The concept or skill to map, in textbook terms: what the student is struggling with or about to learn (e.g. "Electric flux through a surface"), or the prerequisite the answer check named, to look further into it.',
+        },
+        context: {
+          type: "string",
+          description:
+            "Optional, but it sharpens the map: what you've seen — the problem, the student's error and the misconception the answer check named, or what they said they don't follow.",
+        },
+      },
+      required: ["concept"],
       additionalProperties: false,
     },
     eager_input_streaming: true,

@@ -36,7 +36,15 @@ const OUTLINE_BUTTON =
   "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border border-ink/10 px-2.5 text-sm font-medium transition-colors hover:bg-ink/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 /** The student's settings, laid out like Grok's: profile, appearance, shortcuts and their data. */
-export function SettingsDialog({ onDeleteAll, onClose }: { onDeleteAll: () => void; onClose: () => void }) {
+export function SettingsDialog({
+  onDeleteAll,
+  onClearKnowledge,
+  onClose,
+}: {
+  onDeleteAll: () => void;
+  onClearKnowledge: () => void;
+  onClose: () => void;
+}) {
   const [section, setSection] = useState<SectionKey>("profile");
   const titleId = useId();
   const headingId = useId();
@@ -110,7 +118,7 @@ export function SettingsDialog({ onDeleteAll, onClose }: { onDeleteAll: () => vo
             {section === "profile" && <ProfileSection />}
             {section === "appearance" && <AppearanceSection />}
             {section === "shortcuts" && <ShortcutsSection />}
-            {section === "data" && <DataSection onDeleteAll={onDeleteAll} />}
+            {section === "data" && <DataSection onDeleteAll={onDeleteAll} onClearKnowledge={onClearKnowledge} />}
           </div>
         </section>
 
@@ -352,12 +360,21 @@ function ShortcutsSection() {
   );
 }
 
-function DataSection({ onDeleteAll }: { onDeleteAll: () => void }) {
+function DataSection({ onDeleteAll, onClearKnowledge }: { onDeleteAll: () => void; onClearKnowledge: () => void }) {
   const usage = useStorageUsage();
   return (
     <>
       <Row title="Storage" description="Your chats, courses and files are kept in this browser, on this device.">
         <span className="text-sm text-muted">{usage ?? "—"}</span>
+      </Row>
+      <Divider />
+      <Row
+        title="Learning record"
+        description="What your answer checks showed about each concept, and how concepts build on each other across your courses. Ainsley uses it to find gaps from earlier courses."
+      >
+        <button type="button" onClick={onClearKnowledge} className={cn(OUTLINE_BUTTON, "text-danger")}>
+          Clear
+        </button>
       </Row>
       <Divider />
       <Row

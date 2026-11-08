@@ -1,5 +1,5 @@
-import { clear, createStore, del, delMany, entries, get, set, type UseStore } from "idb-keyval";
-import type { Conversation, Course, Material, SavedProblem } from "./types";
+import { clear, createStore, del, delMany, entries, get, set, setMany, type UseStore } from "idb-keyval";
+import type { Concept, ConceptEvidence, Conversation, Course, Material, SavedProblem } from "./types";
 
 // Everything lives in IndexedDB: thinking-block signatures and extracted course text make
 // this far too large for localStorage's ~5 MB quota. idb-keyval keeps one object store per
@@ -27,6 +27,11 @@ const previews = () => getStore("ainsley-previews", "previews");
 const folders = () => getStore("ainsley-folders", "folders");
 // Problems Ainsley has worked out (solve_problem), by problem id, so each is solved once.
 const problems = () => getStore("ainsley-problems", "problems");
+// The student's knowledge map, across all their courses: concepts, what each builds on, and
+// where their materials teach it.
+const concepts = () => getStore("ainsley-concepts", "concepts");
+// What answer checks showed about each concept, one record per concept per check.
+const evidence = () => getStore("ainsley-evidence", "evidence");
 
 async function loadAll<T>(store: UseStore | null): Promise<T[]> {
   if (!store) return [];
@@ -134,4 +139,26 @@ export async function loadProblem(id: string): Promise<SavedProblem | undefined>
 export async function saveProblem(problem: SavedProblem) {
   const s = problems();
   if (s) await set(problem.id, problem, s);
+}
+
+// ---------- The knowledge map ----------
+
+export const loadConcepts = () => loadAll<Concept>(concepts());
+export const loadEvidence = () => loadAll<ConceptEvidence>(evidence());
+
+export async function saveConcepts(list: Concept[]) {
+  const s = concepts();
+  if (s && list.length) await setMany(list.map((c) => [c.id, c]), s);
+}
+
+export async function saveEvidence(list: ConceptEvidence[]) {
+  const s = evidence();
+  if (s && list.length) await setMany(list.map((e) => [e.id, e]), s);
+}
+
+export async function removeKnowledge() {
+  const c = concepts();
+  const e = evidence();
+  if (c) await clear(c);
+  if (e) await clear(e);
 }

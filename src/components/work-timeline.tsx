@@ -10,6 +10,7 @@ import {
   Layers,
   Lightbulb,
   Link2,
+  Network,
   Search,
   Shapes,
   SquareFunction,
@@ -41,15 +42,19 @@ const ICONS: Record<Activity["kind"], LucideIcon> = {
   solve: SquareFunction,
   evaluate: ClipboardCheck,
   simulation: Shapes,
+  prerequisites: Network,
   web_search: Globe,
   web_fetch: Link2,
 };
 
-/** Result filtering can repeat an identical lookup; show it once. Thoughts, solves, answer checks and simulations stand alone. */
+/** Steps that stand alone even when repeated: thoughts, solves, answer checks, simulations and prerequisite maps. */
+const STANDALONE = new Set<Activity["kind"]>(["thought", "solve", "evaluate", "simulation", "prerequisites"]);
+
+/** Result filtering can repeat an identical lookup; show it once. */
 function dedupe(activity: Activity[]) {
   const seen = new Set<string>();
   return activity.filter((a) => {
-    if (a.kind === "thought" || a.kind === "solve" || a.kind === "evaluate" || a.kind === "simulation") return true;
+    if (STANDALONE.has(a.kind)) return true;
     const key = `${a.kind}:${a.label}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -100,6 +105,8 @@ function describe(a: Activity): ReactNode {
       return now ? "Checking your answer" : "Checked your answer";
     case "simulation":
       return `${now ? "Drawing" : "Drew"} a ${a.label}`;
+    case "prerequisites":
+      return `${now ? "Tracing" : "Traced"} what “${a.label}” builds on`;
     case "web_fetch":
       return <>{now ? "Reading" : "Read"} <Query>{a.label}</Query></>;
   }
