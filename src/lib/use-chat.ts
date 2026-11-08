@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runTool, toolActivity } from "./agent-tools";
-import { closeTurns, messageContent, streamChat, toApiMessages } from "./chat-client";
+import { closeTurns, messageContent, nameThought, streamChat, toApiMessages } from "./chat-client";
 import { summarizeReply } from "./citations";
 import { buildContext, lastContextState, resolveScope } from "./course-context";
 import {
@@ -38,6 +38,14 @@ export const NAVIGATE_EVENT = "ainsley:navigate";
 
 /** Upper bound on API requests in one reply (tool rounds plus pause_turn resumes). */
 const MAX_STEPS = 12;
+
+/**
+ * A thought is named once this much of its reasoning summary has arrived (or when it ends, if
+ * sooner), and a long stretch of thinking becomes a new step after this much more, so the
+ * timeline keeps moving while Ainsley thinks, as Grok's does.
+ */
+const NAME_THOUGHT_AFTER = 400;
+const NEW_THOUGHT_AFTER = 1600;
 
 function idFromPath(pathname: string) {
   return /^\/c\/([A-Za-z0-9_-]+)\/?$/.exec(pathname)?.[1] ?? null;
@@ -252,6 +260,37 @@ export function useChat() {
         activity = activity.map((a) => (a.id === id ? { ...a, ...update } : a));
       };
 
+      // Whether the answer has begun since Ainsley's last step; until it has, Ainsley is working.
+      let answering = false;
+      // Set once the reply is saved: a thought named after that updates the saved reply.
+      let finished = false;
+
+      /** A new step in the timeline (a thought or a tool call): Ainsley is working again. */
+      const addStep = (item: Activity) => {
+        activity = [...activity, item];
+        answering = false;
+        thinkingMs = undefined;
+      };
+
+      const nameStep = (id: string, reasoning: string) => {
+        void nameThought(reasoning).then((title) => {
+          // A thought that couldn't be named says nothing: leave it out.
+          const rename = (list: Activity[]) =>
+            title ? list.map((a) => (a.id === id ? { ...a, label: title } : a)) : list.filter((a) => a.id !== id);
+          if (!finished) {
+            activity = rename(activity);
+            scheduleFlush();
+            return;
+          }
+          updateConversation(conversationId, (c) => ({
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === assistantId && m.activity ? { ...m, activity: rename(m.activity) } : m,
+            ),
+          }));
+        });
+      };
+
       try {
         let step = 0;
         for (; step < MAX_STEPS; step++) {
@@ -259,21 +298,50 @@ export function useChat() {
           stepText = "";
           let done: { content: ApiBlock[]; stopReason: string | null; container: string | null } | null = null;
           let streamError: string | null = null;
+          // The thought being summarized in this response, if any.
+          let thought: { id: string; reasoning: string; named: boolean } | null = null;
 
           await streamChat(
             { messages: [...base, ...turns], container },
             (event) => {
               switch (event.type) {
                 case "text":
-                  thinkingMs ??= Date.now() - startedAt;
+                  if (!answering) {
+                    answering = true;
+                    thinkingMs = Date.now() - startedAt;
+                  }
                   stepText += event.text;
                   text = prefix && stepText && !prefix.endsWith("\n") ? `${prefix}\n\n${stepText}` : prefix + stepText;
                   scheduleFlush();
                   break;
+                case "thinking": {
+                  if (!thought) {
+                    thought = { id: createId(), reasoning: "", named: false };
+                    addStep({ id: thought.id, kind: "thought", label: "", status: "running" });
+                  }
+                  thought.reasoning += event.text;
+                  if (!thought.named && thought.reasoning.length >= NAME_THOUGHT_AFTER) {
+                    thought.named = true;
+                    nameStep(thought.id, thought.reasoning);
+                  } else if (thought.named && thought.reasoning.length >= NEW_THOUGHT_AFTER) {
+                    setActivity(thought.id, { status: "done" });
+                    thought = null;
+                  }
+                  scheduleFlush();
+                  break;
+                }
+                case "thinking_stop":
+                  if (thought) {
+                    if (!thought.named) nameStep(thought.id, thought.reasoning);
+                    setActivity(thought.id, { status: "done" });
+                    thought = null;
+                    scheduleFlush();
+                  }
+                  break;
                 case "tool": {
                   const item = toolActivity(event.name, event.input, event.id);
                   if (item) {
-                    activity = [...activity, item];
+                    addStep(item);
                     scheduleFlush();
                   }
                   break;
@@ -358,6 +426,7 @@ export function useChat() {
       } finally {
         cancelFlush();
         activity = activity.map((a) => (a.status === "running" ? { ...a, status: "done" } : a));
+        thinkingMs ??= Date.now() - startedAt;
 
         if (status === "refused") {
           // Partial output from a declined response is discarded.
@@ -380,6 +449,7 @@ export function useChat() {
             error: exhausted ? "Ainsley stopped after too many steps." : undefined,
           });
         }
+        finished = true;
 
         if (controllers.current.get(conversationId) === controller) {
           controllers.current.delete(conversationId);

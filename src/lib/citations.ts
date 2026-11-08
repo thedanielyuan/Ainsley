@@ -179,9 +179,10 @@ export function summarizeReply(turns: ApiTurn[], s: LibraryState): ReplySummary 
   placePending();
 
   // Web results reached through result filtering (code execution) come back without
-  // citations, and Ainsley links its sources inline instead. A link to a page it really found
-  // (never one it didn't) becomes a source chip like a citation; pages it read in full but
-  // neither cited nor linked are listed as further reading.
+  // citations, and Ainsley links its sources inline instead. A link stays a link the student can
+  // click (a list of videos or readings is only useful with its links), and a page it really
+  // found (never one it didn't) joins the reply's sources; pages it read in full but neither
+  // cited nor linked are listed as further reading.
   const found = new Map<string, string>();
   const read: Array<{ url: string; title: string }> = [];
   for (const turn of turns) {
@@ -210,26 +211,20 @@ export function summarizeReply(turns: ApiTurn[], s: LibraryState): ReplySummary 
     return n;
   };
 
-  display = mapOutsideCode(display, (part) =>
-    part.replace(/(?<!!)\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (link, label: string, url: string) => {
+  for (const part of outsideCode(display)) {
+    for (const [, label, url] of part.matchAll(/(?<!!)\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g)) {
       const title = found.get(normalizeUrl(url));
-      if (title === undefined) return link;
-      const n = webNumber(url, title || label);
-      const words = /^(https?:\/\/|www\.)\S*$/i.test(label.trim()) ? "" : label;
-      return `${words}${marker([{ n }])}`;
-    }),
-  );
+      if (title !== undefined) webNumber(url, title || label);
+    }
+  }
   for (const page of read) webNumber(page.url, page.title, true);
 
   return { text, display, sources };
 }
 
-/** Applies `fn` to the parts of some Markdown outside fenced and inline code. */
-function mapOutsideCode(markdown: string, fn: (part: string) => string) {
-  return markdown
-    .split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g)
-    .map((part, i) => (i % 2 === 1 ? part : fn(part)))
-    .join("");
+/** The parts of some Markdown outside fenced and inline code. */
+function outsideCode(markdown: string) {
+  return markdown.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g).filter((_, i) => i % 2 === 0);
 }
 
 function normalizeUrl(url: string) {
@@ -244,14 +239,14 @@ function normalizeUrl(url: string) {
 const views = new WeakMap<ChatMessage, { display?: string; sources?: Source[] }>();
 
 /**
- * A finished reply's Markdown and sources. Replies without source chips (saved before them, or
- * citing nothing) are re-derived from their transcript; messages are immutable, so this is cached.
+ * A finished reply's Markdown and sources, derived from its transcript so replies saved earlier
+ * show the way current ones do (before, links Ainsley wrote turned into chips). Replies from
+ * before transcripts keep what was saved. Messages are immutable, so this is cached.
  */
 export function replyCitations(message: ChatMessage, s: LibraryState) {
   let view = views.get(message);
   if (!view) {
-    const legacy = Boolean(message.turns && !message.display?.includes("(#src-"));
-    const summary = legacy && message.turns ? summarizeReply(message.turns, s) : null;
+    const summary = message.turns ? summarizeReply(message.turns, s) : null;
     view = summary
       ? { display: summary.display || message.display, sources: summary.sources.length ? summary.sources : message.sources }
       : { display: message.display, sources: message.sources };

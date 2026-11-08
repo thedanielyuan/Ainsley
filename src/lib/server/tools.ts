@@ -130,7 +130,8 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
   {
     type: "web_search_20260209",
     name: "web_search",
-    max_uses: 5,
+    // Room to gather real options when a student asks for videos or readings.
+    max_uses: 8,
     blocked_domains: [...ANSWER_SITES, "quizlet.com/explanations"],
   },
   {

@@ -49,9 +49,8 @@
   --shadow-dialog: 0 24px 64px rgb(0 0 0 / 0.55);
   --shadow-composer: 0 10px 30px -14px rgb(0 0 0 / 0.6);
 
-  /* The light that sweeps over "study" on the home screen (see .study-word). */
+  /* The light at the heart of the glint that sweeps over "study" on the home screen. */
   --study-glint: #ffffff;
-  --study-sheen: rgb(255 255 255 / 0.7);
 
   /* The dimmer band that sweeps over a working chat's title (see .title-shimmer). */
   --title-shimmer-peak: #7b7974;
@@ -103,7 +102,6 @@
 
   /* A white glint would vanish on a light page: here the sweep deepens the accent instead. */
   --study-glint: var(--accent-strong);
-  --study-sheen: color-mix(in srgb, var(--accent-strong) 60%, #000);
 
   --title-shimmer-peak: color-mix(in srgb, var(--color-fg) 45%, #fff);
 
@@ -240,6 +238,24 @@ body {
   }
 }
 
+/* ---------- Work timeline ----------
+ * The spinner on the "Working for 12s" row above a reply, like Grok's: a disc with a notch
+ * turning in it. */
+.work-spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: conic-gradient(transparent 0 25%, var(--color-fg) 25% 100%);
+  animation: work-spin 1s linear infinite;
+}
+
+@keyframes work-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* ---------- Working chat title ----------
  * How Claude marks a chat that is still answering in the background: no dot, just its title
  * shimmering. Following claude.ai's ShimmerText, a soft bell-shaped band of a dimmer grey
@@ -282,14 +298,22 @@ body {
 /* ---------- Home heading: "What should we study?" ----------
  * When the home screen opens, an underline draws itself beneath "study" and a glint of light
  * travels along it, sweeping across the word's letters at the same moment. Both run once, with
- * the same size and timing so the light on the line and on the word stay in step. Like Grok's
- * "explore", the underline then fades away (500ms) the moment the glint has passed, leaving
- * just the word. */
+ * the same size, colors and timing so the light on the line and on the word stay in step. Like
+ * Grok's "explore", the underline then fades away (500ms) the moment the glint has passed,
+ * leaving just the word. The word itself is always the heading's color (white on dark, near
+ * black on light), whatever the accent: only the passing glint carries the accent. */
 
 .study-word {
   background-image:
-    linear-gradient(100deg, transparent 42%, var(--study-sheen) 50%, transparent 58%),
-    linear-gradient(90deg, var(--accent-soft), var(--accent));
+    linear-gradient(
+      100deg,
+      transparent 38%,
+      var(--accent) 44%,
+      var(--study-glint) 50%,
+      var(--accent-soft) 56%,
+      transparent 62%
+    ),
+    linear-gradient(var(--color-fg), var(--color-fg));
   background-size: 300% 100%, 100% 100%;
   background-position: 100% 0, 0 0;
   background-repeat: no-repeat;
@@ -395,6 +419,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .shimmer,
+  .work-spinner,
   .study-word,
   .study-underline,
   .tooltip-in,

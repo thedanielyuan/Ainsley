@@ -491,7 +491,7 @@ export function ChatApp() {
           </div>
         )}
       </main>
-      <WorkspacePanel containerWidth={workspaceWidth} conversation={active ?? undefined} />
+      <WorkspacePanel containerWidth={workspaceWidth} />
       </div>
 
       {searchOpen && <SearchDialog conversations={conversations} onSelect={openChat} onClose={closeSearch} />}

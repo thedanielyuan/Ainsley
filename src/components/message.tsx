@@ -1,16 +1,16 @@
 "use client";
 
-import { BookOpen, PanelRightOpen, Pencil, RotateCcw, TriangleAlert } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { BookOpen, Pencil, RotateCcw, TriangleAlert } from "lucide-react";
+import { memo, useMemo, useState } from "react";
 import { replyCitations } from "@/lib/citations";
 import { getLibrary } from "@/lib/library";
 import type { ChatMessage } from "@/lib/types";
-import { cn, formatDuration } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { MessageAttachments } from "./attachments";
 import { Markdown } from "./markdown";
-import { ActivityList, ReplySourcesContext, SourcesContent } from "./sources";
+import { ReplySourcesContext, SourcesContent } from "./sources";
 import { CopyButton, IconButton } from "./ui";
-import { useWorkspace } from "./workspace-context";
+import { WorkTimeline } from "./work-timeline";
 
 interface MessageItemProps {
   message: ChatMessage;
@@ -102,12 +102,9 @@ function UserMessage({ message, busy, onEdit }: MessageItemProps) {
 }
 
 function AssistantMessage({ message, isLast, busy, onRegenerate }: MessageItemProps) {
-  const workspace = useWorkspace();
   const { status, text, thinkingMs, activity } = message;
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const streaming = status === "streaming";
-  const working = streaming && activity?.some((a) => a.status === "running");
-  const waiting = streaming && !text && !working;
   const done = !streaming;
   // Once the reply is finished, cited passages link directly to their files or web pages.
   const cited = done && status !== "refused" ? replyCitations(message, getLibrary()) : null;
@@ -119,13 +116,7 @@ function AssistantMessage({ message, isLast, busy, onRegenerate }: MessageItemPr
 
   return (
     <div className="group flex flex-col gap-2">
-      {waiting ? (
-        <ThinkingIndicator startedAt={message.createdAt} />
-      ) : thinkingMs !== undefined && thinkingMs >= 2000 && !activity?.length ? (
-        <p className="text-sm text-subtle">Thought for {formatDuration(thinkingMs)}</p>
-      ) : null}
-
-      {activity && activity.length > 0 && <ActivityList activity={activity} live={streaming} />}
+      <WorkTimeline activity={activity ?? []} live={streaming} startedAt={message.createdAt} workMs={thinkingMs} />
 
       {text && (
         <ReplySourcesContext.Provider value={replySources}>
@@ -165,20 +156,6 @@ function AssistantMessage({ message, isLast, busy, onRegenerate }: MessageItemPr
               <RotateCcw className="size-4" />
             </IconButton>
           )}
-          {text && (
-            <IconButton
-              label="Open in panel"
-              tooltip="bottom"
-              onClick={() => workspace.openReply({
-                id: message.id,
-                text,
-                display: cited?.display,
-                sources,
-              })}
-            >
-              <PanelRightOpen className="size-4" />
-            </IconButton>
-          )}
           {sources && sources.length > 0 && (
             <button
               type="button"
@@ -199,24 +176,6 @@ function AssistantMessage({ message, isLast, busy, onRegenerate }: MessageItemPr
           <SourcesContent sources={sources} />
         </div>
       )}
-    </div>
-  );
-}
-
-function ThinkingIndicator({ startedAt }: { startedAt: number }) {
-  const [seconds, setSeconds] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setSeconds(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [startedAt]);
-
-  return (
-    <div className="flex h-7 items-center gap-2" role="status" aria-live="polite">
-      <span className="shimmer text-[15px] font-medium">Thinking</span>
-      {seconds > 0 && <span className="text-sm tabular-nums text-subtle">{seconds}s</span>}
     </div>
   );
 }

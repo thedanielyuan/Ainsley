@@ -63,10 +63,12 @@ export interface ContextState extends ChatScope {
   materialIds: string[];
 }
 
+/** A step in the timeline above a reply: a stretch of Ainsley's thinking, or a tool call. */
 export interface Activity {
-  /** The tool_use id. */
+  /** The tool_use id; generated for a thought. */
   id: string;
-  kind: "materials" | "open" | "module" | "evaluate" | "web_search" | "web_fetch";
+  kind: "thought" | "materials" | "open" | "module" | "evaluate" | "web_search" | "web_fetch";
+  /** What a tool call looked up; a thought's name ("" until /api/thought names it). */
   label: string;
   status: "running" | "done" | "error";
   detail?: string;
@@ -115,7 +117,10 @@ export interface ChatMessage {
   display?: string;
   sources?: Source[];
   activity?: Activity[];
-  /** Time from request start to the first visible token. */
+  /**
+   * How long Ainsley worked before its answer: from the request to the first text after its last
+   * step (or to the end, if it wrote nothing after). Unset while it's still working.
+   */
   thinkingMs?: number;
 }
 
@@ -207,6 +212,10 @@ export interface ApiMessage {
 /** /api/chat → client, one JSON object per line. */
 export type StreamEvent =
   | { type: "text"; text: string }
+  /** Part of the summary of Ainsley's reasoning: used to name the step, never shown as is. */
+  | { type: "thinking"; text: string }
+  /** The thinking block in progress ended. */
+  | { type: "thinking_stop" }
   /** A tool call is complete (client tools run after `done`; server tools run on Anthropic's side). */
   | { type: "tool"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; id: string; ok: boolean; count?: number }

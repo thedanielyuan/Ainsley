@@ -2,11 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { getLibrary } from "@/lib/library";
-import type { Source } from "@/lib/types";
 
-export type WorkspaceTab =
-  | { kind: "material"; id: string; title: string; materialId: string; page?: number; revision: number }
-  | { kind: "reply"; id: string; title: string; messageId: string; text: string; display?: string; sources: Source[] };
+export type WorkspaceTab = { kind: "material"; id: string; title: string; materialId: string; page?: number; revision: number };
 
 /** The workspace docks beside the page from this width of shared area; below it, it's a drawer. */
 export const DOCK_MIN_WIDTH = 880;
@@ -49,9 +46,7 @@ export function useWorkspaceController(scope: string) {
     update((current) => ({
       ...current,
       tabs: current.tabs.some((item) => item.id === tab.id)
-        ? current.tabs.map((item) => item.id === tab.id
-          ? tab.kind === "material" && item.kind === "material" ? { ...tab, revision: item.revision + 1 } : tab
-          : item)
+        ? current.tabs.map((item) => item.id === tab.id ? { ...tab, revision: item.revision + 1 } : item)
         : [...current.tabs, tab],
       activeId: tab.id,
       isOpen: true,
@@ -61,14 +56,6 @@ export function useWorkspaceController(scope: string) {
   const openMaterial = useCallback((materialId: string, page?: number) => {
     const material = getLibrary().materials[materialId];
     openTab({ kind: "material", id: `material:${materialId}`, title: material?.name ?? "File preview", materialId, page, revision: 0 });
-  }, [openTab]);
-
-  const openReply = useCallback((message: { id: string; text: string; display?: string; sources?: Source[] }, title?: string) => {
-    const heading = /^#{1,3}\s+(.+)$/m.exec(message.text)?.[1];
-    openTab({
-      kind: "reply", id: `reply:${message.id}`, title: title ?? heading?.slice(0, 48) ?? "Response",
-      messageId: message.id, text: message.text, display: message.display, sources: message.sources ?? [],
-    });
   }, [openTab]);
 
   const closePanel = useCallback(() => {
@@ -108,7 +95,7 @@ export function useWorkspaceController(scope: string) {
     tabs,
     activeId,
     activeTab: tabs.find((tab) => tab.id === activeId) ?? null,
-    openMaterial, openReply, selectTab, closeTab, closePanel, togglePanel, toggleExpanded, restoreFocus,
+    openMaterial, selectTab, closeTab, closePanel, togglePanel, toggleExpanded, restoreFocus,
   };
 }
 
