@@ -9,7 +9,8 @@ type ToolResultBlock = Extract<ApiBlock, { type: "tool_result" }>;
  * blocks, tool calls and results, citations) so each request extends the previous one
  * append-only. The exceptions: a file the student has since deleted is replaced with a note
  * (the API drops any reasoning that depended on it), and a tool result the API would reject is
- * repaired (see onlySearchResults).
+ * repaired (see onlySearchResults). A correction Ainsley posted after the check of a reply found
+ * a false claim goes in after the app's request for it, exactly as it was sent.
  */
 export function toApiMessages(history: ChatMessage[], s: LibraryState): ApiMessage[] {
   const liveFiles = new Set<string>();
@@ -21,16 +22,31 @@ export function toApiMessages(history: ChatMessage[], s: LibraryState): ApiMessa
     if (m.role === "user") {
       out.push({ role: "user", content: m.content?.length ? clean(m.content) : m.text });
       if (m.context) out.push({ role: "system", content: m.context });
-    } else if (m.turns?.length) {
-      for (const turn of m.turns) out.push({ role: turn.role, content: clean(turn.content) });
+      continue;
+    }
+    const reply: ApiMessage[] = [];
+    if (m.turns?.length) {
+      for (const turn of m.turns) reply.push({ role: turn.role, content: clean(turn.content) });
     } else if (m.blocks?.length) {
-      out.push({ role: "assistant", content: m.blocks });
+      reply.push({ role: "assistant", content: m.blocks });
     } else if (m.text.trim() && m.status !== "refused" && m.status !== "error") {
       // A response the student stopped early: replay the partial text.
-      out.push({ role: "assistant", content: [{ type: "text", text: m.text }] });
+      reply.push({ role: "assistant", content: [{ type: "text", text: m.text }] });
     }
+    // A correction follows the app's request for it (a system message must follow a user turn).
+    // Without a reply to follow it, the request is left out too.
+    if (reply.length && m.correction) out.push(...correctionPrefix(m.correction));
+    out.push(...reply);
   }
   return out;
+}
+
+/** The app's request for a correction, as it goes in the history before Ainsley's correction. */
+export function correctionPrefix(c: { prompt: string; note: string }): ApiMessage[] {
+  return [
+    { role: "user", content: c.prompt },
+    { role: "system", content: c.note },
+  ];
 }
 
 function replaceDeletedFiles(blocks: ApiBlock[], live: Set<string>): ApiBlock[] {

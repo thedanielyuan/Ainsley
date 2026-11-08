@@ -102,7 +102,7 @@ function UserMessage({ message, busy, onEdit }: MessageItemProps) {
 }
 
 function AssistantMessage({ message, isLast, busy, onRegenerate }: MessageItemProps) {
-  const { status, text, thinkingMs, activity } = message;
+  const { status, text, thinkingMs, activity, audit } = message;
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const streaming = status === "streaming";
   const done = !streaming;
@@ -116,7 +116,13 @@ function AssistantMessage({ message, isLast, busy, onRegenerate }: MessageItemPr
 
   return (
     <div className="group flex flex-col gap-2">
-      <WorkTimeline activity={activity ?? []} live={streaming} startedAt={message.createdAt} workMs={thinkingMs} />
+      <WorkTimeline
+        activity={activity ?? []}
+        live={streaming}
+        startedAt={message.createdAt}
+        workMs={thinkingMs}
+        audit={audit}
+      />
 
       {text && (
         <ReplySourcesContext.Provider value={replySources}>

@@ -74,6 +74,7 @@ export interface Activity {
     | "module"
     | "solve"
     | "evaluate"
+    | "check"
     | "simulation"
     | "prerequisites"
     | "web_search"
@@ -211,6 +212,48 @@ export interface ConceptEvidence {
   at: number;
 }
 
+/** A mathematical claim to check by running code (check_math, or the check of a finished reply). */
+export interface MathClaim {
+  /** The claim as Ainsley states it to the student; LaTeX for math. */
+  claim: string;
+  /** A sympy expression for what the claim computes, or a sympy boolean for a property. */
+  sympy: string;
+  /** What the claim says it equals, as a sympy expression; "True" for a property. */
+  value: string;
+}
+
+/** What running code showed about a claim. */
+export type ClaimStatus = "verified" | "false" | "cannot_check";
+
+export interface CheckedClaim {
+  claim: string;
+  status: ClaimStatus;
+  /** For a false claim: the correct value or statement; otherwise "". */
+  correct: string;
+  /** What was run and what it showed, or why the claim couldn't be checked. */
+  checkedBy: string;
+}
+
+/** Result of POST /api/check and POST /api/audit: one verdict per claim, in order. */
+export interface CheckResponse {
+  claims: CheckedClaim[];
+  error?: string;
+}
+
+/**
+ * The check of a finished reply's math: running; every claim verified ("checked"); some left
+ * unchecked ("unverified"); one false ("wrong", and Ainsley posts a correction); the check
+ * itself failed; or nothing in it to check ("none").
+ */
+export type AuditStatus = "running" | "checked" | "unverified" | "wrong" | "failed" | "none";
+
+export interface MathAudit {
+  status: AuditStatus;
+  claims?: CheckedClaim[];
+  /** Set once Ainsley has been asked to correct the reply. */
+  corrected?: boolean;
+}
+
 /** `quotes`: the distinct passages Ainsley cited from it, shown in the source details in chat. */
 export type Source =
   | { type: "material"; materialId: string; title: string; page?: number; quotes?: string[] }
@@ -248,6 +291,14 @@ export interface ChatMessage {
    * step (or to the end, if it wrote nothing after). Unset while it's still working.
    */
   thinkingMs?: number;
+  /** The check of this reply's math, run once it finishes. */
+  audit?: MathAudit;
+  /**
+   * Set on a correction Ainsley posted after the check found a false claim in an earlier reply.
+   * Before its turns, the API history holds the app's short user turn and the findings as a
+   * system message, replayed unchanged like everything else.
+   */
+  correction?: { of: string; prompt: string; note: string };
 }
 
 export interface Conversation {
