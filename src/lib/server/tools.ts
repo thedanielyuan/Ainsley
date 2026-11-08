@@ -35,7 +35,8 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
       "Search the student's own course materials — lecture slides, notes, readings, problem sets, past exams, and files attached in this chat — for passages relevant to a query. " +
       "Returns the best-matching excerpts, each labeled with its file and page or slide, which you can cite. " +
       "Use it before explaining anything their course covers, so you teach it the way this course does: its notation, definitions, methods, and scope. " +
-      "Only text is searched: photos and scanned PDFs need open_course_material. If results are thin, search again with different wording or the course's own terms.",
+      "Photos and scanned PDFs are searched by their transcribed text, which can contain recognition errors: open the file when exact symbols, wording, or a figure matter. " +
+      "If results are thin, search again with different wording or the course's own terms.",
     input_schema: {
       type: "object",
       properties: {
@@ -55,8 +56,8 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     description:
       "Open one of the student's course files by its id from the course context. " +
       "PDFs up to 100 pages are shown whole — page images plus text — so you can see diagrams, equations, and layout; photos are shown as images; slides and documents return their text. " +
-      "For longer files, or to read just part of one, pass `pages`. " +
-      "Use it when you need a whole problem set or worked example, a figure, or a file search can't read (photos, scans); use search to find things.",
+      "For longer files, or to read just part of one, pass `pages` (a scan's pages then come as their transcribed text). " +
+      "Use it when you need a whole problem set or worked example, a figure, or the original of a photo or scan; use search to find things.",
     input_schema: {
       type: "object",
       properties: {
@@ -77,7 +78,7 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
       "Retrieve one module of the student's course — a week, unit, lecture, chapter, topic folder, or group of files, as listed in the course outline in the course context — with the text of all its files, in order, as citable passages. " +
       "Use it when a request is about a whole part of the course rather than one idea: summarizing or reviewing a week or lecture, making a quiz or practice set on a unit, planning revision for an exam, or seeing what a module covers. " +
       "Returns up to about 25,000 tokens; a longer module comes back as each file's opening pages (each passage's title names its file and page), so open the rest with open_course_material if you need it. " +
-      "Photos and scans have no text: open them instead. For one concept or definition, search_course_materials is faster.",
+      "Photos and scans come back as their transcribed text; open them to see the originals. For one concept or definition, search_course_materials is faster.",
     input_schema: {
       type: "object",
       properties: {

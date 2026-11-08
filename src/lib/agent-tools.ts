@@ -21,7 +21,7 @@ export async function runTool(
   signal: AbortSignal,
 ): Promise<ToolOutcome> {
   if (call.name === EVALUATE_TOOL) return runEvaluate(call, ctx, signal);
-  return runCourseTool(call, ctx);
+  return runCourseTool(call, ctx, signal);
 }
 
 function failed(id: string, message: string, detail: string): ToolOutcome {

@@ -1,5 +1,5 @@
 import { courseModules, findModule, type CourseModule } from "./course-modules";
-import { courseMaterials, getLibrary, pageUnit, type LibraryState } from "./library";
+import { courseMaterials, getLibrary, isSearchable, pageUnit, type LibraryState } from "./library";
 import { MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL } from "./tool-names";
 import type { ApiBlock, Material } from "./types";
 
@@ -24,6 +24,9 @@ export function parseMaterialSource(source: string) {
 export const MAX_VIEW_PAGES = 100;
 const MAX_OPEN_PAGES = 30;
 const TOP_K = 6;
+/** Keyword matches handed to the re-ranker, which keeps the TOP_K that help most. */
+const CANDIDATES = 30;
+const RERANK_TIMEOUT_MS = 15_000;
 /** A module's text comes back up to about this many characters (~25k tokens), shared fairly between its files. */
 const MODULE_MAX_CHARS = 100_000;
 
@@ -127,7 +130,8 @@ function buildIndex(materials: Material[]): Index {
 const K1 = 1.4;
 const B = 0.75;
 
-function search(materials: Material[], query: string) {
+/** The best keyword matches, at most one passage per page. */
+function search(materials: Material[], query: string, limit: number) {
   const index = buildIndex(materials);
   const queryTerms = [...new Set(tokenize(query))];
   if (queryTerms.length === 0) return [];
@@ -156,13 +160,39 @@ function search(materials: Material[], query: string) {
   const picked: Chunk[] = [];
   const seen = new Set<string>();
   for (const { chunk, score } of scored) {
-    if (score <= 0 || picked.length >= TOP_K) break;
+    if (score <= 0 || picked.length >= limit) break;
     const key = `${chunk.material.id}:${chunk.page}`;
     if (seen.has(key)) continue;
     seen.add(key);
     picked.push(chunk);
   }
   return picked;
+}
+
+/**
+ * Re-orders keyword matches by meaning (/api/materials/rerank) and keeps the TOP_K that help,
+ * best first, or none when none do. If they can't be judged, the keyword order stands.
+ */
+async function rerank(query: string, chunks: Chunk[], signal: AbortSignal): Promise<Chunk[]> {
+  const keywordOrder = chunks.slice(0, TOP_K);
+  try {
+    const res = await fetch("/api/materials/rerank", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query,
+        limit: TOP_K,
+        passages: chunks.map((c) => ({ title: pageTitle(c.material, c.page), text: c.text })),
+      }),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(RERANK_TIMEOUT_MS)]),
+    });
+    const data = (await res.json().catch(() => null)) as { order?: unknown } | null;
+    if (!res.ok || !Array.isArray(data?.order)) return keywordOrder;
+    return data.order.flatMap((i) => (typeof i === "number" && chunks[i] ? [chunks[i]] : [])).slice(0, TOP_K);
+  } catch (err) {
+    if (signal.aborted) throw err;
+    return keywordOrder;
+  }
 }
 
 // ---------- Tool execution ----------
@@ -202,14 +232,16 @@ function errorResult(id: string, message: string, detail = "Couldn't run"): Tool
   };
 }
 
+/** Photos and scans whose text search can't reach (not transcribed, or none found). */
 function unviewable(materials: Material[]) {
-  return materials.filter((m) => m.kind === "image" || m.scanned);
+  return materials.filter((m) => (m.kind === "image" || m.scanned) && !isSearchable(m));
 }
 
-export function runCourseTool(
+export async function runCourseTool(
   block: { id: string; name: string; input: unknown },
   ctx: ToolContext,
-): ToolOutcome {
+  signal: AbortSignal,
+): Promise<ToolOutcome> {
   const s = getLibrary();
   const input = (block.input ?? {}) as Record<string, unknown>;
   const scope = materialsInScope(s, ctx.courseId, ctx.conversationId);
@@ -232,8 +264,10 @@ export function runCourseTool(
       };
     }
 
-    // Cache the index per (unchanged) scope by reusing the same array for the same library.
-    const hits = search(stableList(s, scope), query);
+    // Keyword matches (the index is cached per unchanged scope by reusing the same array for the
+    // same library), then re-ranked by meaning.
+    const candidates = search(stableList(s, scope), query, CANDIDATES);
+    const hits = candidates.length > TOP_K ? await rerank(query, candidates, signal) : candidates;
     if (hits.length === 0) {
       const visual = unviewable(scope);
       const note = visual.length
@@ -242,11 +276,14 @@ export function runCourseTool(
             .map((m) => `[${m.id}] ${m.name}`)
             .join("; ")}.`
         : "";
+      const found = candidates.length
+        ? `None of the passages that share words with “${query}” are about it.`
+        : `No passages matched “${query}”.`;
       return {
         result: {
           type: "tool_result",
           tool_use_id: block.id,
-          content: `No passages matched “${query}”. Try other wording or the course's own terms, or tell the student their materials don't seem to cover this.${note}`,
+          content: `${found} Try other wording or the course's own terms, or tell the student their materials don't seem to cover this.${note}`,
         },
         detail: "No matches",
         ok: true,
@@ -352,14 +389,14 @@ function fairShares(sizes: number[], total: number): number[] {
 function moduleResult(id: string, mod: CourseModule): ToolOutcome {
   const files = mod.materials.length;
   const detail = `${files} file${files === 1 ? "" : "s"}`;
-  const readable = mod.materials.filter((m) => m.pages.some((p) => p.text.trim()));
+  const readable = mod.materials.filter(isSearchable);
   if (readable.length === 0) {
     const list = mod.materials.map((m) => `[${m.id}] ${m.name}`).join("; ");
     return {
       result: {
         type: "tool_result",
         tool_use_id: id,
-        content: `“${mod.title}” holds only photos or scans, which have no text to retrieve. View them with ${OPEN_TOOL}: ${list}.`,
+        content: `“${mod.title}” holds only photos or scans without transcribed text. View them with ${OPEN_TOOL}: ${list}.`,
       },
       detail,
       ok: true,
@@ -440,9 +477,11 @@ function openMaterial(s: LibraryState, id: string, m: Material, requested: numbe
     );
   }
 
-  // Whole PDFs of reasonable length: let Ainsley see the pages, diagrams included.
-  if (m.kind === "pdf" && m.fileId && m.pageCount <= MAX_VIEW_PAGES && (!requested || m.scanned)) {
-    const note = requested && m.scanned ? ` This is a scan; look at ${pageUnit(m.kind, requested.length)} ${requested.join(", ")}.` : "";
+  // Whole PDFs of reasonable length: let Ainsley see the pages, diagrams included. Chosen pages
+  // of a scan come as their transcribed text, or, before there is any, as the whole scan.
+  const untranscribedScan = Boolean(m.scanned) && !isSearchable(m);
+  if (m.kind === "pdf" && m.fileId && m.pageCount <= MAX_VIEW_PAGES && (!requested || untranscribedScan)) {
+    const note = requested ? ` This is a scan; look at ${pageUnit(m.kind, requested.length)} ${requested.join(", ")}.` : "";
     return ok(
       [
         { type: "text", text: `${m.name} (${m.pageCount} ${pageUnit(m.kind, m.pageCount)}).${note}` },
@@ -457,7 +496,7 @@ function openMaterial(s: LibraryState, id: string, m: Material, requested: numbe
     );
   }
 
-  if (m.scanned) {
+  if (untranscribedScan) {
     return errorResult(
       id,
       `${m.name} is a ${m.pageCount}-page scan with no text layer, too long to view whole. Ask the student to upload the specific pages they need help with.`,

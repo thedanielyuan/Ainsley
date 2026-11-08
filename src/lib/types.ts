@@ -178,10 +178,18 @@ export interface Material {
   pageCount: number;
   /** Anthropic Files API id: PDFs and images, which Ainsley can view directly. */
   fileId?: string;
-  /** Extracted text used for search, and sent in place of files the API can't read (slides, docs). */
+  /**
+   * Extracted text used for search, and sent in place of files the API can't read (slides, docs).
+   * Photos and scans get theirs transcribed after they're added.
+   */
   pages: MaterialPage[];
-  /** True when a PDF had no selectable text (a scan): viewable, but not searchable. */
+  /** True when a PDF had no selectable text (a scan). Its text is transcribed, as a photo's is. */
   scanned?: boolean;
+  /**
+   * For photos and scans: "done" once their transcribed text is in `pages`, "failed" if it can't
+   * be read (not tried again). Unset until then.
+   */
+  transcription?: "done" | "failed";
   thumbnail?: string;
   /** Files from a linked folder: "<folder>/<path in it>", and when the file last changed (to spot edits). */
   folderPath?: string;
