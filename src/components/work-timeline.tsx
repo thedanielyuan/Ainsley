@@ -28,8 +28,8 @@ import { cn, formatDuration } from "@/lib/utils";
  * What Ainsley did before answering, laid out like Grok's thinking. While it works, a timeline
  * grows above a "Working for 12s" row: each stretch of thinking by name ("Planning a hint for
  * part (b)"), and each lookup. When the answer starts, the row turns into "Worked for 28s"; when
- * the reply is done, the steps fold into that line, which opens them again. Beside it, the check
- * of the reply's math says "Math checked" or "Not verified".
+ * the reply is done, the steps fold into that line, which opens them again. Beside it, a reply
+ * whose math couldn't be verified says "Not verified".
  */
 
 /** Below this, a reply with no steps doesn't say how long it took. */
@@ -241,9 +241,17 @@ function AuditRow({ audit, step }: { audit: MathAudit; step: Activity }) {
   );
 }
 
-/** "Math checked" or "Not verified" beside "Worked for 28s", or the check still running. */
+/**
+ * What sits beside "Worked for 28s": the check still running, or "Not verified". Math that checked
+ * out needs no badge; the step list still ends with what was checked.
+ */
+function badgeLabel(audit?: MathAudit): string | null {
+  if (!audit || audit.status === "checked") return null;
+  return auditLabel(audit.status);
+}
+
 function AuditBadge({ audit }: { audit?: MathAudit }) {
-  const label = audit && auditLabel(audit.status);
+  const label = badgeLabel(audit);
   if (!audit || !label) return null;
   if (audit.status === "running") {
     return (
@@ -253,11 +261,9 @@ function AuditBadge({ audit }: { audit?: MathAudit }) {
       </span>
     );
   }
-  const checked = audit.status === "checked";
-  const Icon = checked ? ShieldCheck : ShieldAlert;
   return (
-    <span role="status" className={cn("inline-flex items-center gap-1 text-sm leading-6", checked ? "text-subtle" : "text-muted")}>
-      <Icon aria-hidden="true" className="size-3.5" />
+    <span role="status" className="inline-flex items-center gap-1 text-sm leading-6 text-muted">
+      <ShieldAlert aria-hidden="true" className="size-3.5" />
       {label}
     </span>
   );
@@ -322,7 +328,7 @@ export function WorkTimeline({
   const badge = <AuditBadge audit={audit} />;
   if (!steps.length) {
     const showWorked = workMs !== undefined && workMs >= MIN_SHOWN_MS;
-    if (!showWorked && !auditLabel(audit?.status ?? "none")) return null;
+    if (!showWorked && !badgeLabel(audit)) return null;
     return (
       <div className="flex flex-wrap items-center gap-x-3">
         {showWorked && workedLine}
