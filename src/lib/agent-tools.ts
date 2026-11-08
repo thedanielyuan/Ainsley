@@ -1,16 +1,29 @@
 import { parseEvaluateInput, VERDICT_LABELS, workAttachments } from "./answer-check";
 import { runCourseTool, type ToolContext, type ToolOutcome } from "./course-tools";
+import { conceptNames } from "./knowledge";
 import { getLibrary } from "./library";
+import { parsePrerequisiteMap, parseTraceInput, type TraceResponse } from "./prerequisite-map";
+import { afterCheck, traceReport, traceRequest } from "./prerequisites";
 import { problemId, savedSolution, saveSolution } from "./problems";
 import { formatSolution, parseSolution, parseSolveInput, SOLUTION_LABELS } from "./solution";
-import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL, SIMULATION_TOOL, SOLVE_TOOL } from "./tool-names";
+import {
+  EVALUATE_TOOL,
+  MODULE_TOOL,
+  OPEN_TOOL,
+  PREREQUISITES_TOOL,
+  SEARCH_TOOL,
+  SIMULATION_TOOL,
+  SOLVE_TOOL,
+} from "./tool-names";
 import type { Activity, EvaluateResponse, Material, SolveResponse, VerifiedSolution } from "./types";
 
 /**
  * Runs the tool calls Ainsley makes on the browser's side of its loop, and describes each for the
  * activity list under a reply. Course tools read the local library; solving goes to /api/solve
- * (and the solution is saved here), answer checks to /api/evaluate; a simulation is checked here
- * and drawn in the reply. (Web search and fetch run on Anthropic's side.)
+ * (and the solution is saved here), answer checks to /api/evaluate (and what they show goes into
+ * the student's knowledge map), prerequisite maps to /api/prerequisites (and into the knowledge
+ * map, with where the student's courses teach each part); a simulation is checked here and drawn
+ * in the reply. (Web search and fetch run on Anthropic's side.)
  */
 
 export interface AgentToolContext extends ToolContext {
@@ -26,6 +39,7 @@ export async function runTool(
   if (call.name === SOLVE_TOOL) return runSolve(call, ctx, signal);
   if (call.name === EVALUATE_TOOL) return runEvaluate(call, ctx, signal);
   if (call.name === SIMULATION_TOOL) return runSimulation(call);
+  if (call.name === PREREQUISITES_TOOL) return runTrace(call, ctx, signal);
   return runCourseTool(call, ctx, signal);
 }
 
@@ -131,9 +145,11 @@ async function runEvaluate(
     if (!solution) note = `No saved solution has the id ${input.problem_id}, so the check worked the problem out itself.\n\n`;
   }
 
+  // The concepts already in the student's knowledge map, so the check names them the same way.
+  const concepts = await conceptNames().catch(() => []);
   const reply = await post<Partial<EvaluateResponse>>(
     "/api/evaluate",
-    { input, attachments: workAttachments(ctx.attachments), solution },
+    { input, attachments: workAttachments(ctx.attachments), solution, concepts },
     call,
     signal,
     { what: "The answer check", fallback: "Check the answer yourself, carefully.", detail: "Couldn't check" },
@@ -143,7 +159,36 @@ async function runEvaluate(
   if (typeof content !== "string" || !verdict) {
     return failed(call.id, "The answer check failed. Check the answer yourself, carefully.", "Couldn't check");
   }
-  return answered(call.id, note + content, VERDICT_LABELS[verdict] ?? "Checked");
+  const prerequisite = await afterCheck(reply.data, ctx).catch((err) => {
+    console.error("[ainsley] couldn't record the answer check in the knowledge map:", err);
+    return "";
+  });
+  const text = note + content + (prerequisite ? `\n\n${prerequisite}` : "");
+  return answered(call.id, text, VERDICT_LABELS[verdict] ?? "Checked");
+}
+
+async function runTrace(
+  call: { id: string; input: unknown },
+  ctx: AgentToolContext,
+  signal: AbortSignal,
+): Promise<ToolOutcome> {
+  const input = parseTraceInput(call.input);
+  if (typeof input === "string") return failed(call.id, input, "Couldn't run");
+
+  const fallback =
+    "Work out what this concept builds on yourself, and ask the student a quick question on the most likely gap before you explain.";
+  const reply = await post<Partial<TraceResponse>>(
+    "/api/prerequisites",
+    await traceRequest(input, ctx.courseId),
+    call,
+    signal,
+    { what: "Mapping prerequisites", fallback, detail: "Couldn't map" },
+  );
+  if ("outcome" in reply) return reply.outcome;
+  const map = parsePrerequisiteMap(reply.data.map);
+  if (!map) return answered(call.id, `The prerequisite mapper declined. ${fallback}`, "Couldn't map");
+  const { content, detail } = await traceReport(map, signal);
+  return answered(call.id, content, detail);
 }
 
 /** A tool call as the activity list shows it while it runs; null for calls that aren't shown. */
@@ -170,6 +215,10 @@ export function toolActivity(name: string, input: Record<string, unknown>, id: s
         function_graph: "graph",
       };
       return { id, kind: "simulation", label: names[str(input.kind)] ?? "simulation", status: "running" };
+    }
+    case PREREQUISITES_TOOL: {
+      const concept = str(input.concept).replace(/\s+/g, " ").trim();
+      return { id, kind: "prerequisites", label: concept || "the concept", status: "running" };
     }
     case "web_search":
       return { id, kind: "web_search", label: str(input.query), status: "running" };

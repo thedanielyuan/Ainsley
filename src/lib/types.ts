@@ -67,7 +67,17 @@ export interface ContextState extends ChatScope {
 export interface Activity {
   /** The tool_use id; generated for a thought. */
   id: string;
-  kind: "thought" | "materials" | "open" | "module" | "solve" | "evaluate" | "simulation" | "web_search" | "web_fetch";
+  kind:
+    | "thought"
+    | "materials"
+    | "open"
+    | "module"
+    | "solve"
+    | "evaluate"
+    | "simulation"
+    | "prerequisites"
+    | "web_search"
+    | "web_fetch";
   /** What a tool call looked up; a thought's name ("" until /api/thought names it). */
   label: string;
   status: "running" | "done" | "error";
@@ -77,11 +87,29 @@ export interface Activity {
 /** The answer checker's overall judgment of a student's attempt. */
 export type AnswerVerdict = "correct" | "partially_correct" | "incorrect" | "incomplete" | "cannot_evaluate";
 
+/**
+ * A concept an answer check found the problem exercising, and how the student's work showed it.
+ * practiced: what the problem is about; prerequisite: something it relies on from earlier.
+ */
+export interface CheckedConcept {
+  name: string;
+  role: "practiced" | "prerequisite";
+  outcome: "shown" | "error" | "not_reached";
+  /** For an error: the misconception the checker named, if any. */
+  misconception: string;
+}
+
 /** Result of POST /api/evaluate. */
 export interface EvaluateResponse {
   /** The tool result for Ainsley: the full assessment, worded for the tutor. */
   content: string;
   verdict: AnswerVerdict;
+  /** The concepts the check found the problem exercising, for the student's knowledge map. */
+  concepts?: CheckedConcept[];
+  /** The concept the first error is in, or "" (correct work, or an error in no single concept). */
+  firstErrorConcept?: string;
+  /** False when the checker couldn't read the work with confidence: its concepts aren't evidence. */
+  reliable?: boolean;
   error?: string;
 }
 
@@ -139,6 +167,48 @@ export interface SavedProblem {
 export interface SolveResponse {
   solution: VerifiedSolution | null;
   error?: string;
+}
+
+// ---------- The student's knowledge map ----------
+
+/** Where a course's materials teach a concept. */
+export interface ConceptLocation {
+  courseId: string;
+  materialId: string;
+  page: number;
+}
+
+/**
+ * A concept or skill in the student's knowledge map, which spans all their courses: what it
+ * builds on, and where their materials teach it. Added by answer checks and prerequisite maps.
+ */
+export interface Concept {
+  id: string;
+  /** Its name in the map, as a textbook would put it ("Double integrals in polar coordinates"). */
+  name: string;
+  /** Other names it has been given, so the same concept is found again. */
+  aliases: string[];
+  summary: string;
+  /** The concepts it builds on, and what for. */
+  prerequisites: Array<{ id: string; why: string }>;
+  /** Where the student's materials teach it, best first, at most one place per course. */
+  taughtIn: ConceptLocation[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One answer check's evidence about a concept: whether the student's work showed it. */
+export interface ConceptEvidence {
+  id: string;
+  conceptId: string;
+  outcome: "shown" | "error";
+  /** Whether the concept was what the problem practiced, or something it relied on from earlier. */
+  role: CheckedConcept["role"];
+  courseId: string | null;
+  conversationId: string;
+  /** For an error: the misconception behind it, if the checker named one. */
+  misconception?: string;
+  at: number;
 }
 
 /** `quotes`: the distinct passages Ainsley cited from it, shown in the source details in chat. */

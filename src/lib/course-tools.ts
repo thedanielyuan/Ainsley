@@ -170,29 +170,55 @@ function search(materials: Material[], query: string, limit: number) {
 }
 
 /**
- * Re-orders keyword matches by meaning (/api/materials/rerank) and keeps the TOP_K that help,
+ * Re-orders keyword matches by meaning (/api/materials/rerank) and keeps the `limit` that help,
  * best first, or none when none do. If they can't be judged, the keyword order stands.
  */
-async function rerank(query: string, chunks: Chunk[], signal: AbortSignal): Promise<Chunk[]> {
-  const keywordOrder = chunks.slice(0, TOP_K);
+async function rerank(query: string, chunks: Chunk[], signal: AbortSignal, limit = TOP_K): Promise<Chunk[]> {
+  const keywordOrder = chunks.slice(0, limit);
   try {
     const res = await fetch("/api/materials/rerank", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         query,
-        limit: TOP_K,
+        limit,
         passages: chunks.map((c) => ({ title: pageTitle(c.material, c.page), text: c.text })),
       }),
       signal: AbortSignal.any([signal, AbortSignal.timeout(RERANK_TIMEOUT_MS)]),
     });
     const data = (await res.json().catch(() => null)) as { order?: unknown } | null;
     if (!res.ok || !Array.isArray(data?.order)) return keywordOrder;
-    return data.order.flatMap((i) => (typeof i === "number" && chunks[i] ? [chunks[i]] : [])).slice(0, TOP_K);
+    return data.order.flatMap((i) => (typeof i === "number" && chunks[i] ? [chunks[i]] : [])).slice(0, limit);
   } catch (err) {
     if (signal.aborted) throw err;
     return keywordOrder;
   }
+}
+
+/** A passage of a course file: a page, or part of a long one. */
+export interface Passage {
+  material: Material;
+  page: number;
+  text: string;
+}
+
+/** Keyword matches handed to the re-ranker when finding where a concept is taught. */
+const PLACE_CANDIDATES = 15;
+
+/**
+ * Where these materials teach `query`: keyword matches re-ranked by meaning, best first, at most
+ * `limit`; none when no passage is about it (prerequisite maps use this across all courses).
+ */
+export async function findPassages(
+  s: LibraryState,
+  materials: Material[],
+  query: string,
+  limit: number,
+  signal: AbortSignal,
+): Promise<Passage[]> {
+  const candidates = search(stableList(s, materials), query, PLACE_CANDIDATES);
+  // Always judged, even when there are few: a wrong "taught in" sends the student to the wrong place.
+  return candidates.length ? rerank(query, candidates, signal, limit) : [];
 }
 
 // ---------- Tool execution ----------
@@ -305,11 +331,13 @@ export async function runCourseTool(
 
   if (block.name === OPEN_TOOL) {
     const id = typeof input.material_id === "string" ? input.material_id.trim().replace(/^\[|\]$/g, "") : "";
-    const m = scope.find((x) => x.id === id);
+    // Files in the student's other courses open too: a prerequisite map can point to where an
+    // earlier course taught something. (Files attached in other chats stay with those chats.)
+    const m = scope.find((x) => x.id === id) ?? (s.materials[id]?.courseId ? s.materials[id] : undefined);
     if (!m) {
       return errorResult(
         block.id,
-        `No material with id “${id}” in this chat's course or attachments. Use an id from the course context.`,
+        `No material with id “${id}” in the student's courses or this chat's attachments. Use an id from the course context or a prerequisite map.`,
         "Not found",
       );
     }
