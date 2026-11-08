@@ -8,7 +8,10 @@ A personal tutor for university students. Success is measured by how much better
 cp .env.example .env.local   # then add your ANTHROPIC_API_KEY
 npm install
 npm run dev                  # http://localhost:3000
+npm run eval                 # in a second terminal: measure Ainsley against its guiding principles
 ```
+
+`npm run eval` drives the running app with problems that have known answers and with simulated students, and prints a summary table by guiding principle: solver and checker accuracy, final answers given before the student's attempt, help that skips hint rungs, and math stated without a check. Run it before and after changing the system prompt, tools, solver, checker or tutoring policy, add `--compare evals/results/<earlier run>` for the before/after column, and put both tables in the PR; `--suite math` or `--suite tutoring` runs half. It calls Claude (a full run costs about $12 and takes about 10 minutes), so it isn't in CI. Flags and how to read the numbers are in [evals/README.md](evals/README.md); `node --test "evals/**/*.test.mjs"` checks its answer key offline.
 
 PowerPoint previews need LibreOffice on the app server. Install it with `brew install --cask libreoffice` on macOS or your Linux package manager, or set `SOFFICE_PATH` in `.env.local` to an existing `soffice` executable. The renderer uses a temporary isolated profile, deletes its temporary files, and sends no deck to an external viewer. Hosted installations need a Node server/container with LibreOffice and the fonts used by the presentations; a plain serverless deployment without the converter cannot render PowerPoint previews.
 
