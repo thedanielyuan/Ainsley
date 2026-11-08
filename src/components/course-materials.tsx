@@ -28,6 +28,7 @@ import {
   ROLE_LABELS,
   UPLOAD_ACCEPT,
   uploadMaterial,
+  useLibrary,
   type PendingUpload,
 } from "@/lib/library";
 import type { Course, LinkedFolder, Material } from "@/lib/types";
@@ -641,8 +642,15 @@ function FileRow({
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const reading = Boolean(useLibrary().transcribing[m.id]);
   const size = m.kind === "image" ? "—" : `${m.pageCount} ${pageUnit(m.kind, m.pageCount)}`;
-  const details = [ROLE_LABELS[m.role], m.scanned ? "Scanned" : null].filter(Boolean).join(" · ");
+  const details = [
+    ROLE_LABELS[m.role],
+    m.scanned ? "Scanned" : null,
+    reading ? "Reading text…" : m.transcription === "failed" ? "Couldn't read text" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <li

@@ -1,5 +1,5 @@
 import { courseModules, type CourseModule } from "./course-modules";
-import { pageUnit, ROLE_LABELS, type LibraryState } from "./library";
+import { isSearchable, needsTranscription, pageUnit, ROLE_LABELS, type LibraryState } from "./library";
 import { MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL } from "./tool-names";
 import type { ChatMessage, ChatScope, ContextState, Material } from "./types";
 
@@ -28,8 +28,16 @@ export function lastContextState(history: ChatMessage[]): ContextState | undefin
 function describe(m: Material) {
   const parts = [ROLE_LABELS[m.role].toLowerCase()];
   if (m.kind !== "image") parts.push(`${m.pageCount} ${pageUnit(m.kind, m.pageCount)}`);
-  if (m.kind === "image") parts.push("view with open_course_material; not searchable");
-  else if (m.scanned) parts.push("scanned: view with open_course_material; not searchable");
+  if (m.kind === "image" || m.scanned) {
+    if (m.scanned) parts.push("scanned");
+    parts.push(
+      isSearchable(m)
+        ? "text transcribed and searchable; view the original with open_course_material"
+        : needsTranscription(m)
+          ? "its text is being transcribed; until then, view it with open_course_material"
+          : "view with open_course_material; not searchable",
+    );
+  }
   return `[${m.id}] ${m.name} — ${parts.join(", ")}`;
 }
 

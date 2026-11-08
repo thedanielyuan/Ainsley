@@ -7,6 +7,7 @@ import { MAX_VIEW_PAGES } from "./course-tools";
 import {
   deleteMaterial,
   dismissUpload,
+  isSearchable,
   uploadMaterial,
   type LibraryState,
   type UploadTarget,
@@ -121,7 +122,12 @@ export function draftStatus(draft: Draft, s: LibraryState) {
     const course = m.courseId ? s.courses[m.courseId] : undefined;
     let note = course ? `Saved to ${course.name}` : fileSummary(m.kind, m.pageCount);
     if (m.kind === "pdf" && m.pageCount > MAX_VIEW_PAGES) {
-      note = m.scanned ? "Long scan: too big to view whole" : "Long PDF: Ainsley will search it";
+      note =
+        !m.scanned || isSearchable(m)
+          ? "Long PDF: Ainsley will search it"
+          : s.transcribing[id]
+            ? "Long scan: reading its text…"
+            : "Long scan: too big to view whole";
     } else if (m.scanned) {
       note = "Scanned: Ainsley will view it";
     }

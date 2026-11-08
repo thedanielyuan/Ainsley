@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import {
   loadCourses,
+  loadFile,
   loadMaterials,
   removeCourse,
   removeFolderHandle,
@@ -10,7 +11,15 @@ import {
   saveCourse,
   saveMaterial,
 } from "./storage";
-import type { Course, LinkedFolder, Material, MaterialKind, MaterialRole, ProcessedUpload } from "./types";
+import type {
+  Course,
+  LinkedFolder,
+  Material,
+  MaterialKind,
+  MaterialPage,
+  MaterialRole,
+  ProcessedUpload,
+} from "./types";
 import { createId, omit } from "./utils";
 
 /**
@@ -37,9 +46,11 @@ export interface LibraryState {
   courses: Record<string, Course>;
   materials: Record<string, Material>;
   uploads: Record<string, PendingUpload>;
+  /** Photos and scans whose text is being transcribed. */
+  transcribing: Record<string, true>;
 }
 
-const SERVER_STATE: LibraryState = { ready: false, courses: {}, materials: {}, uploads: {} };
+const SERVER_STATE: LibraryState = { ready: false, courses: {}, materials: {}, uploads: {}, transcribing: {} };
 let state: LibraryState = SERVER_STATE;
 const listeners = new Set<() => void>();
 
@@ -78,6 +89,8 @@ export function loadLibrary() {
         courses: Object.fromEntries(courseList.map((c) => [c.id, c])),
         materials: Object.fromEntries(materialList.map((m) => [m.id, m])),
       }));
+      // Photos and scans added before transcription existed, or whose transcription was cut short.
+      for (const m of materialList) if (needsTranscription(m)) transcribeMaterial(m.id);
     });
   return loading;
 }
@@ -303,6 +316,93 @@ export function pruneOrphanMaterials(conversationIds: Set<string>) {
   );
 }
 
+/** Runs at most `max` tasks at once; the rest wait their turn. */
+function limiter(max: number) {
+  let running = 0;
+  const waiting: Array<() => void> = [];
+  return {
+    take(): Promise<void> {
+      if (running < max) {
+        running++;
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => waiting.push(resolve));
+    },
+    release() {
+      const next = waiting.shift();
+      if (next) next();
+      else running--;
+    },
+  };
+}
+
+// ---------- Transcribing photos and scans ----------
+
+export function hasText(m: Material) {
+  return m.pages.some((p) => p.text.trim());
+}
+
+/** Whether search reaches a file's text: photos and scans only once it has been transcribed. */
+export function isSearchable(m: Material) {
+  if (m.kind === "image" || m.scanned) return m.transcription === "done" && hasText(m);
+  return hasText(m);
+}
+
+/** Photos and scans have no text layer: theirs is transcribed once, after they're added. */
+export function needsTranscription(m: Material) {
+  return (m.kind === "image" || Boolean(m.scanned)) && !m.transcription;
+}
+
+// A course can bring many photos at once, and a long scan is itself read in parallel parts.
+const transcriptionSlots = limiter(2);
+
+function isPages(value: unknown): value is MaterialPage[] {
+  return Array.isArray(value) && value.every((p) => typeof p?.n === "number" && typeof p?.text === "string");
+}
+
+/**
+ * Transcribes a photo or scan in the background (/api/materials/transcribe), so search, module
+ * retrieval and citations reach its text. `file` is the original when it was just added; otherwise
+ * it's read from this device. A failure that might be temporary is tried again the next time the
+ * library loads; one that won't go away is remembered, so it isn't paid for again.
+ */
+function transcribeMaterial(id: string, file?: Blob) {
+  if (state.transcribing[id]) return;
+  setState((s) => ({ ...s, transcribing: { ...s.transcribing, [id]: true } }));
+
+  void (async () => {
+    await transcriptionSlots.take();
+    try {
+      const m = state.materials[id];
+      if (!m || !needsTranscription(m)) return;
+      const original = file ?? (await loadFile(id));
+      if (!original) {
+        updateMaterial(id, { transcription: "failed" });
+        return;
+      }
+      const form = new FormData();
+      form.append("file", original, original instanceof File ? original.name : m.name);
+      const res = await fetch("/api/materials/transcribe", { method: "POST", body: form });
+      const body = (await res.json().catch(() => null)) as { pages?: unknown; error?: string } | null;
+      if (!state.materials[id]) return; // Deleted meanwhile.
+      if (res.ok && isPages(body?.pages)) {
+        updateMaterial(id, { pages: body.pages, transcription: "done" });
+      } else if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
+        updateMaterial(id, { transcription: "failed" });
+      } else {
+        console.warn(`[ainsley] couldn't transcribe ${m.name} (will retry):`, body?.error ?? res.status);
+      }
+    } catch (err) {
+      console.warn("[ainsley] couldn't transcribe a file (will retry):", err);
+    } finally {
+      setState((s) => ({ ...s, transcribing: omit(s.transcribing, id) }));
+      transcriptionSlots.release();
+    }
+  })();
+}
+
+// ---------- Uploads ----------
+
 export function dismissUpload(id: string) {
   setState((s) => ({ ...s, uploads: omit(s.uploads, id) }));
 }
@@ -343,23 +443,7 @@ export interface UploadTarget {
 }
 
 // A linked folder can bring dozens of files at once: process a few at a time.
-const MAX_PARALLEL_UPLOADS = 4;
-let uploading = 0;
-const waiting: Array<() => void> = [];
-
-function takeUploadSlot(): Promise<void> {
-  if (uploading < MAX_PARALLEL_UPLOADS) {
-    uploading++;
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => waiting.push(resolve));
-}
-
-function releaseUploadSlot() {
-  const next = waiting.shift();
-  if (next) next();
-  else uploading--;
-}
+const uploadSlots = limiter(4);
 
 /**
  * Uploads and processes a file into the library. Returns the id the material will have
@@ -380,7 +464,7 @@ export function uploadMaterial(file: File, target: UploadTarget): { id: string }
   }));
 
   void (async () => {
-    await takeUploadSlot();
+    await uploadSlots.take();
     try {
       if (!state.uploads[id]) return; // Dismissed while waiting its turn.
       const processed = await postFile(file, (fraction) => {
@@ -422,13 +506,14 @@ export function uploadMaterial(file: File, target: UploadTarget): { id: string }
       }));
       persist(saveMaterial(material, file));
       if (replaces) deleteMaterial(replaces);
+      if (needsTranscription(material)) transcribeMaterial(id, file);
     } catch (err) {
       patchUpload(id, {
         phase: "error",
         error: err instanceof Error ? err.message : "Upload failed.",
       });
     } finally {
-      releaseUploadSlot();
+      uploadSlots.release();
     }
   })();
 
