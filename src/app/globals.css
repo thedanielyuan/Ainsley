@@ -1,0 +1,697 @@
+@import "tailwindcss";
+
+/*
+ * Ainsley's palette. Backgrounds follow Claude's (dark by default, light on request): the chat on
+ * #191919 with a lighter #1f1f1f sidebar and a #303030 composer in dark mode; white with a #fafafa
+ * sidebar in light mode. The accent is the student's choice in Settings → Appearance. `ink` is the
+ * overlay color for hovers and tints: white on dark, black on light. Theme and accent are
+ * attributes on <html>, set before the first paint by the script in app/layout.tsx and kept in
+ * sync by AppearanceSync.
+ */
+@theme {
+  --color-bg: #191919;
+  --color-sidebar: #1f1f1f;
+  --color-surface: #303030;
+  --color-elevated: #303030;
+  --color-panel: #1f1f1f;
+  --color-well: #141414;
+  --color-fg: #ededed;
+  --color-muted: #afafaf;
+  --color-subtle: #8f8f8f;
+  --color-line: rgb(255 255 255 / 0.1);
+  --color-ink: #ffffff;
+  --color-scrim: rgb(0 0 0 / 0.6);
+  --color-danger: #f87171;
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--accent-on);
+}
+
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Accent: purple unless the student picked another (data-accent). `soft` is the tint used for
+     text and icons, light on dark backgrounds and deep on light ones. */
+  --accent: #8b5cf6;
+  --accent-strong: #7c3aed;
+  --accent-on: #ffffff;
+  --accent-soft-dark: #b69cff;
+  --accent-soft-light: #7c3aed;
+  --accent-soft: var(--accent-soft-dark);
+
+  --shadow-popover: 0 16px 40px rgb(0 0 0 / 0.5);
+  --shadow-dialog: 0 24px 64px rgb(0 0 0 / 0.55);
+  --shadow-composer: 0 10px 30px -14px rgb(0 0 0 / 0.6);
+
+  /* The light that sweeps over "study" on the home screen (see .study-word). */
+  --study-glint: #ffffff;
+  --study-sheen: rgb(255 255 255 / 0.7);
+
+  /* Course icon colors, by index (see COURSE_COLORS). */
+  --course-0: #a78bfa;
+  --course-1: #60a5fa;
+  --course-2: #34d399;
+  --course-3: #fbbf24;
+  --course-4: #f87171;
+  --course-5: #f472b6;
+  --course-6: #22d3ee;
+  --course-7: #a3e635;
+
+  --code-bg: #141414;
+  --hl-comment: #7c7c86;
+  --hl-keyword: #c4a7ff;
+  --hl-string: #a6e3b8;
+  --hl-number: #f6c177;
+  --hl-title: #8ab4ff;
+  --hl-type: #f0a6ca;
+  --hl-variable: #e6e6e6;
+  --hl-meta: #9ccfd8;
+  --hl-deletion: #eb6f92;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-bg: #ffffff;
+  --color-sidebar: #fafafa;
+  --color-surface: #ffffff;
+  --color-elevated: #ffffff;
+  --color-panel: #ffffff;
+  --color-well: #ececec;
+  --color-fg: #0d0d0d;
+  --color-muted: #5d5d5d;
+  --color-subtle: #737373;
+  --color-line: rgb(0 0 0 / 0.1);
+  --color-ink: #000000;
+  --color-scrim: rgb(0 0 0 / 0.3);
+  --color-danger: #dc2626;
+
+  --accent-soft: var(--accent-soft-light);
+
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.02);
+  --shadow-dialog: 0 24px 64px rgb(0 0 0 / 0.14);
+  --shadow-composer: 0 6px 20px -10px rgb(0 0 0 / 0.14);
+
+  /* A white glint would vanish on a light page: here the sweep deepens the accent instead. */
+  --study-glint: var(--accent-strong);
+  --study-sheen: color-mix(in srgb, var(--accent-strong) 60%, #000);
+
+  --course-0: #7c3aed;
+  --course-1: #2563eb;
+  --course-2: #059669;
+  --course-3: #d97706;
+  --course-4: #dc2626;
+  --course-5: #db2777;
+  --course-6: #0891b2;
+  --course-7: #65a30d;
+
+  --code-bg: #f4f4f4;
+  --hl-comment: #6e7781;
+  --hl-keyword: #8250df;
+  --hl-string: #116329;
+  --hl-number: #953800;
+  --hl-title: #0550ae;
+  --hl-type: #a40e5f;
+  --hl-variable: #1f2328;
+  --hl-meta: #0e6f7a;
+  --hl-deletion: #cf222e;
+}
+
+/* The accents offered in Settings (keep in sync with ACCENTS in lib/appearance.ts). */
+:root[data-accent="blue"] {
+  --accent: #3b82f6;
+  --accent-strong: #2563eb;
+  --accent-soft-dark: #8ab4ff;
+  --accent-soft-light: #2563eb;
+}
+
+:root[data-accent="green"] {
+  --accent: #16a34a;
+  --accent-strong: #15803d;
+  --accent-soft-dark: #4ade80;
+  --accent-soft-light: #15803d;
+}
+
+:root[data-accent="yellow"] {
+  --accent: #eab308;
+  --accent-strong: #ca8a04;
+  --accent-on: #1a1400;
+  --accent-soft-dark: #facc15;
+  --accent-soft-light: #a16207;
+}
+
+:root[data-accent="orange"] {
+  --accent: #ea580c;
+  --accent-strong: #c2410c;
+  --accent-soft-dark: #fb923c;
+  --accent-soft-light: #c2410c;
+}
+
+:root[data-accent="pink"] {
+  --accent: #ec4899;
+  --accent-strong: #db2777;
+  --accent-soft-dark: #f472b6;
+  --accent-soft-light: #be185d;
+}
+
+:root[data-accent="white"] {
+  --accent: #ffffff;
+  --accent-strong: #e2e2e2;
+  --accent-on: #0d0d0d;
+  --accent-soft-dark: #ffffff;
+  --accent-soft-light: #0d0d0d;
+}
+
+/* White would vanish on light backgrounds, so in light mode the white accent is black. */
+:root[data-theme="light"][data-accent="white"] {
+  --accent: #0d0d0d;
+  --accent-strong: #333333;
+  --accent-on: #ffffff;
+}
+
+html {
+  background-color: var(--color-bg);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+}
+
+::selection {
+  background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+/* In the base layer, so utilities such as [scrollbar-width:none] can still hide a scrollbar. */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-ink) 14%, transparent) transparent;
+  }
+}
+
+@utility shadow-popover {
+  box-shadow: var(--shadow-popover);
+}
+
+@utility shadow-dialog {
+  box-shadow: var(--shadow-dialog);
+}
+
+@utility shadow-composer {
+  box-shadow: var(--shadow-composer);
+}
+
+/* ---------- Thinking indicator ---------- */
+
+.shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-subtle) 0%,
+    var(--color-subtle) 35%,
+    var(--color-fg) 50%,
+    var(--color-subtle) 65%,
+    var(--color-subtle) 100%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: shimmer 2.2s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: -100% 50%;
+  }
+}
+
+/* ---------- Home heading: "What should we study?" ----------
+ * When the home screen opens, an underline draws itself beneath "study" and a glint of light
+ * travels along it, sweeping across the word's letters at the same moment. Both run once, with
+ * the same size and timing so the light on the line and on the word stay in step. Like Grok's
+ * "explore", the underline then fades away (500ms) the moment the glint has passed, leaving
+ * just the word. */
+
+.study-word {
+  background-image:
+    linear-gradient(100deg, transparent 42%, var(--study-sheen) 50%, transparent 58%),
+    linear-gradient(90deg, var(--accent-soft), var(--accent));
+  background-size: 300% 100%, 100% 100%;
+  background-position: 100% 0, 0 0;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: study-sheen 2.4s linear 0.35s both;
+}
+
+.study-underline {
+  --study-line: color-mix(in srgb, var(--accent) 60%, transparent);
+  transform-origin: left center;
+  background-image: linear-gradient(
+    90deg,
+    var(--study-line) 0%,
+    var(--study-line) 38%,
+    var(--accent) 44%,
+    var(--study-glint) 50%,
+    var(--accent-soft) 56%,
+    var(--study-line) 62%,
+    var(--study-line) 100%
+  );
+  background-size: 300% 100%;
+  background-position: 100% 0;
+  /* study-fade comes last so it wins over study-draw's held opacity; it starts as the sweep ends
+     (0.35s + 2.4s) and keeps the line hidden afterwards. */
+  animation:
+    study-draw 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both,
+    study-sweep 2.4s linear 0.35s both,
+    study-fade 0.5s cubic-bezier(0.23, 1, 0.32, 1) 2.75s forwards;
+}
+
+@keyframes study-fade {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes study-draw {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+}
+
+@keyframes study-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+@keyframes study-sheen {
+  from {
+    background-position: 100% 0, 0 0;
+  }
+  to {
+    background-position: 0% 0, 0 0;
+  }
+}
+
+/* ---------- Tooltips ---------- */
+
+.tooltip-in {
+  animation: tooltip-in 120ms ease-out;
+}
+
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- Workspace panel and dialogs ---------- */
+
+.sheet-in {
+  animation: sheet-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+.fade-in {
+  animation: tooltip-in 200ms ease-out;
+}
+
+.dialog-in {
+  animation: dialog-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer,
+  .study-word,
+  .study-underline,
+  .tooltip-in,
+  .sheet-in,
+  .fade-in,
+  .dialog-in {
+    animation: none;
+  }
+  .shimmer {
+    background: none;
+    color: var(--color-muted);
+  }
+  /* No glint to follow, so no underline either. */
+  .study-underline {
+    display: none;
+  }
+}
+
+/* ---------- PDF pages (PDF.js text layer, for selecting text) ---------- */
+
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+.textLayer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+
+.textLayer ::selection {
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+.textLayer br::selection {
+  background: transparent;
+}
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.textLayer.selecting .endOfContent {
+  top: 0;
+}
+
+/* ---------- Assistant markdown ---------- */
+
+.md {
+  font-size: 16px;
+  line-height: 28px;
+  color: var(--color-fg);
+  overflow-wrap: break-word;
+}
+
+.md > :first-child {
+  margin-top: 0 !important;
+}
+
+.md > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.md p {
+  margin: 0 0 16px;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 28px 0 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.md h1 {
+  font-size: 24px;
+}
+
+.md h2 {
+  font-size: 20px;
+}
+
+.md h3 {
+  font-size: 18px;
+}
+
+.md h4 {
+  font-size: 16px;
+}
+
+.md ul,
+.md ol {
+  margin: 0 0 16px;
+  padding-left: 26px;
+}
+
+.md ul {
+  list-style: disc;
+}
+
+.md ol {
+  list-style: decimal;
+}
+
+.md li {
+  margin: 6px 0;
+  padding-left: 2px;
+}
+
+.md li::marker {
+  color: var(--color-subtle);
+}
+
+.md li > p {
+  margin: 0 0 8px;
+}
+
+.md li > p:last-child {
+  margin-bottom: 0;
+}
+
+.md li > ul,
+.md li > ol {
+  margin: 6px 0 0;
+}
+
+.md a:not([data-citation]) {
+  color: var(--color-accent-soft);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--color-accent-soft) 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+.md a:not([data-citation]):hover {
+  text-decoration-color: currentColor;
+}
+
+.md strong {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.md blockquote {
+  margin: 0 0 16px;
+  border-left: 2px solid var(--color-accent);
+  padding: 2px 0 2px 16px;
+  color: var(--color-muted);
+}
+
+.md hr {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid var(--color-line);
+}
+
+.md :not(pre) > code {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-ink) 7%, transparent);
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+.md .code-block {
+  margin: 0 0 16px;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  background: var(--code-bg);
+}
+
+.md .code-block pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: 14px 16px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 22px;
+}
+
+.md .code-block pre code {
+  font-family: inherit;
+}
+
+.md .table-wrap {
+  margin: 0 0 16px;
+  overflow-x: auto;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+}
+
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.md th,
+.md td {
+  border-bottom: 1px solid var(--color-line);
+  padding: 9px 14px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.md tr:last-child td {
+  border-bottom: 0;
+}
+
+.md th {
+  background: color-mix(in srgb, var(--color-ink) 3%, transparent);
+  font-weight: 600;
+}
+
+.md .katex {
+  font-size: 1.07em;
+}
+
+.md .katex-display {
+  margin: 0 0 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+}
+
+.md input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: var(--color-accent);
+}
+
+/* ---------- Code highlighting (highlight.js tokens) ---------- */
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-built_in,
+.hljs-doctag {
+  color: var(--hl-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-template-tag {
+  color: var(--hl-string);
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: var(--hl-number);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-title.function_ {
+  color: var(--hl-title);
+}
+
+.hljs-type,
+.hljs-title.class_,
+.hljs-class .hljs-title {
+  color: var(--hl-type);
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-params,
+.hljs-property {
+  color: var(--hl-variable);
+}
+
+.hljs-meta,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--hl-meta);
+}
+
+.hljs-deletion {
+  color: var(--hl-deletion);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}
