@@ -108,7 +108,7 @@ export function formatSolution(id: string, s: VerifiedSolution): string {
     return [
       `The solvers couldn't solve this problem${s.doubt ? `: ${s.doubt}` : "."}`,
       "",
-      "Ask the student for what's missing, or for the full problem as they were given it, before going on.",
+      "Tell the student what's missing or what doesn't add up, and ask for the full problem as they were given it (a value may have been copied wrong) before going on. Don't answer it from the givens that do agree.",
     ].join("\n");
   }
 
