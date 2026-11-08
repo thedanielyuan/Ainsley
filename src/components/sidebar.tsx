@@ -517,7 +517,9 @@ const ChatRow = memo(function ChatRow({
 }) {
   const { id, title } = conversation;
   const active = id === activeId;
-  const streaming = Boolean(streamingIds[id]);
+  // Like Claude, a chat still answering in the background shimmers its title; the open chat
+  // shows its progress in the conversation instead.
+  const working = Boolean(streamingIds[id]) && !active;
   const renaming = id === renamingId;
 
   if (renaming) {
@@ -553,13 +555,8 @@ const ChatRow = memo(function ChatRow({
           indent ? "ps-[34px]" : "ps-[9px]",
         )}
       >
-        <span className="truncate">{title}</span>
-        {streaming && (
-          <span
-            aria-label="Generating"
-            className="ml-auto size-1.5 shrink-0 animate-pulse rounded-full bg-accent"
-          />
-        )}
+        <span className={cn("truncate", working && "title-shimmer")}>{title}</span>
+        {working && <span className="sr-only">, responding</span>}
       </button>
       <div
         className={cn(

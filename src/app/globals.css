@@ -53,6 +53,9 @@
   --study-glint: #ffffff;
   --study-sheen: rgb(255 255 255 / 0.7);
 
+  /* The dimmer band that sweeps over a working chat's title (see .title-shimmer). */
+  --title-shimmer-peak: #7b7974;
+
   /* Course icon colors, by index (see COURSE_COLORS). */
   --course-0: #a78bfa;
   --course-1: #60a5fa;
@@ -101,6 +104,8 @@
   /* A white glint would vanish on a light page: here the sweep deepens the accent instead. */
   --study-glint: var(--accent-strong);
   --study-sheen: color-mix(in srgb, var(--accent-strong) 60%, #000);
+
+  --title-shimmer-peak: color-mix(in srgb, var(--color-fg) 45%, #fff);
 
   --course-0: #7c3aed;
   --course-1: #2563eb;
@@ -235,6 +240,45 @@ body {
   }
 }
 
+/* ---------- Working chat title ----------
+ * How Claude marks a chat that is still answering in the background: no dot, just its title
+ * shimmering. Following claude.ai's ShimmerText, a soft bell-shaped band of a dimmer grey
+ * (lighter grey in light mode) sweeps left to right across the words every 3s: it rests, glides
+ * from just before the title to just past it, and rests again. */
+.title-shimmer {
+  --title-shimmer-ink: var(--color-fg);
+  background-image: linear-gradient(
+    120deg,
+    var(--title-shimmer-ink) 37.5%,
+    color-mix(in srgb, var(--title-shimmer-peak) 16%, var(--title-shimmer-ink)) 41%,
+    color-mix(in srgb, var(--title-shimmer-peak) 46%, var(--title-shimmer-ink)) 44%,
+    color-mix(in srgb, var(--title-shimmer-peak) 83%, var(--title-shimmer-ink)) 47%,
+    var(--title-shimmer-peak) 50%,
+    color-mix(in srgb, var(--title-shimmer-peak) 83%, var(--title-shimmer-ink)) 53%,
+    color-mix(in srgb, var(--title-shimmer-peak) 46%, var(--title-shimmer-ink)) 56%,
+    color-mix(in srgb, var(--title-shimmer-peak) 16%, var(--title-shimmer-ink)) 59%,
+    var(--title-shimmer-ink) 62.5%
+  );
+  background-size: 400% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: title-shimmer 3s linear infinite;
+}
+
+@keyframes title-shimmer {
+  0%,
+  15% {
+    background-position: 83.333% 0;
+    animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  }
+  85%,
+  100% {
+    background-position: 16.667% 0;
+  }
+}
+
 /* ---------- Home heading: "What should we study?" ----------
  * When the home screen opens, an underline draws itself beneath "study" and a glint of light
  * travels along it, sweeping across the word's letters at the same moment. Both run once, with
@@ -362,6 +406,12 @@ body {
   .shimmer {
     background: none;
     color: var(--color-muted);
+  }
+  /* As in Claude, a working chat's title simply stays still. */
+  .title-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
   }
   /* No glint to follow, so no underline either. */
   .study-underline {

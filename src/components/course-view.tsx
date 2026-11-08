@@ -251,9 +251,10 @@ function ChatRow({
         onClick={onOpen}
         className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xl px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
       >
-        <span className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm text-fg">{c.title}</span>
-          {streaming && <span aria-label="Generating" className="size-1.5 shrink-0 animate-pulse rounded-full bg-accent" />}
+        {/* Sized to the title, not the row, so a shimmer sweeps across just the words. */}
+        <span className="flex">
+          <span className={cn("min-w-0 truncate text-sm text-fg", streaming && "title-shimmer")}>{c.title}</span>
+          {streaming && <span className="sr-only">, responding</span>}
         </span>
         <span className="text-xs text-subtle">Last message {formatRelative(c.updatedAt)}</span>
       </button>
