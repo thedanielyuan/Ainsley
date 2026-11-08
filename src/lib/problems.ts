@@ -8,8 +8,11 @@ import type { VerifiedSolution } from "./types";
  * the solution again by its id.
  */
 
-/** Bump when how problems are solved changes, so saved solutions are worked out again. */
-const SOLVER_VERSION = 1;
+/**
+ * Bump when how problems are solved changes, so saved solutions are worked out again. 2: the
+ * solvers check every given, and a problem whose givens contradict each other isn't verified.
+ */
+const SOLVER_VERSION = 2;
 
 /** A problem's id: the same problem text, course and answer key always get the same one. */
 export async function problemId(input: SolveInput, courseId: string | null): Promise<string> {
