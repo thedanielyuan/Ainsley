@@ -21,7 +21,9 @@ export function toApiMessages(history: ChatMessage[], s: LibraryState): ApiMessa
   for (const m of history) {
     if (m.role === "user") {
       out.push({ role: "user", content: m.content?.length ? clean(m.content) : m.text });
-      if (m.context) out.push({ role: "system", content: m.context });
+      // Course context and the tutoring policy share one system message: it must follow a user message.
+      const system = [m.context, m.policy].filter(Boolean).join("\n\n");
+      if (system) out.push({ role: "system", content: system });
       continue;
     }
     const reply: ApiMessage[] = [];

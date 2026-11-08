@@ -1,7 +1,7 @@
 import { courseModules, findModule, type CourseModule } from "./course-modules";
 import { courseMaterials, getLibrary, isSearchable, pageUnit, type LibraryState } from "./library";
 import { MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL } from "./tool-names";
-import type { ApiBlock, Material } from "./types";
+import type { AnswerVerdict, ApiBlock, Material } from "./types";
 
 /**
  * The tools Ainsley uses to read a student's course materials: search, open a file, and
@@ -233,6 +233,11 @@ export interface ToolOutcome {
   /** Short status for the activity list ("4 passages"). */
   detail: string;
   ok: boolean;
+  /**
+   * solve_problem and evaluate_answer: the problem it was about (and the check's verdict), which
+   * the tutoring policy tracks (src/lib/tutoring.ts).
+   */
+  problem?: { id: string; text: string; verdict?: AnswerVerdict };
 }
 
 function pageTitle(m: Material, page: number) {

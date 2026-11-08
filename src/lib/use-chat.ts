@@ -6,6 +6,8 @@ import { closeTurns, correctionPrefix, messageContent, nameThought, streamChat, 
 import { summarizeReply } from "./citations";
 import { SIMULATION_TOOL, simulationMarker, withoutSimulations } from "./simulation/marker";
 import { buildContext, lastContextState, resolveScope } from "./course-context";
+import { TurnTutor } from "./tutoring";
+import { reviewsSettled, startReview, withReview } from "./tutoring-review";
 import {
   claimForConversation,
   deleteChatOnlyMaterials,
@@ -276,26 +278,28 @@ export function useChat() {
   );
 
   /**
-   * Replaces the conversation with `history` and streams a reply onto it. A reply can take
+   * Replaces the conversation with `input` and streams a reply onto it. A reply can take
    * several requests: when Ainsley calls a course tool, the tool runs here (the library is in
    * the browser) and the result goes back in a new request; a `pause_turn` from a long web
    * search is resumed the same way. With `correction`, the reply is a correction the app asked
-   * for after checking an earlier reply's math.
+   * for after checking an earlier reply's math. The tutoring policy (src/lib/tutoring.ts) adds
+   * its system message for the turn first, and a reply to the student is reviewed for it after.
    */
   const generate = useCallback(
-    async (conversationId: string, history: ChatMessage[], correction?: ChatMessage["correction"]) => {
+    async (conversationId: string, input: ChatMessage[], correction?: ChatMessage["correction"]) => {
       controllers.current.get(conversationId)?.abort();
       const controller = new AbortController();
       controllers.current.set(conversationId, controller);
       setStreaming((s) => ({ ...s, [conversationId]: true }));
       // Replies this one replaces (regenerating, editing) no longer need their math checked.
-      const kept = new Set(history.map((m) => m.id));
+      const kept = new Set(input.map((m) => m.id));
       for (const [id, audit] of audits.current) {
         if (audit.conversationId === conversationId && !kept.has(id)) audit.controller.abort();
       }
 
       const startedAt = Date.now();
       const assistantId = createId();
+      let history = input.map(withReview);
       updateConversation(conversationId, (c) => ({
         ...c,
         updatedAt: startedAt,
@@ -312,8 +316,6 @@ export function useChat() {
         ],
       }));
 
-      const base = toApiMessages(history, getLibrary());
-      if (correction) base.push(...correctionPrefix(correction));
       const turns: ApiTurn[] = [];
       let activity: Activity[] = [];
       let text = "";
@@ -324,11 +326,12 @@ export function useChat() {
       let error: string | undefined;
       let frame: number | null = null;
       let exhausted = false;
+      let tutor: TurnTutor | null = null;
 
       const patch = (p: Partial<ChatMessage>) => updateMessage(conversationId, assistantId, p);
       const flush = () => {
         frame = null;
-        patch({ text, thinkingMs, activity, turns: [...turns] });
+        patch({ text, thinkingMs, activity, turns: [...turns], tutoring: tutor?.record(!correction) });
       };
       const scheduleFlush = () => {
         frame ??= requestAnimationFrame(flush);
@@ -375,6 +378,21 @@ export function useChat() {
       };
 
       try {
+        // The tutoring policy for this turn, once the last reply's review is in.
+        await reviewsSettled(conversationId);
+        if (controller.signal.aborted) throw new Error("Stopped.");
+        history = history.map(withReview);
+        const turnTutor = new TurnTutor(history);
+        tutor = turnTutor;
+        const student = history.at(-1);
+        if (student?.role === "user" && (student.policy ?? null) !== turnTutor.policy) {
+          const policy = turnTutor.policy ?? undefined;
+          history = [...history.slice(0, -1), { ...student, policy }];
+          updateMessage(conversationId, student.id, { policy });
+        }
+        const base = toApiMessages(history, getLibrary());
+        if (correction) base.push(...correctionPrefix(correction));
+
         let step = 0;
         for (; step < MAX_STEPS; step++) {
           const prefix = text;
@@ -494,7 +512,8 @@ export function useChat() {
               if (text && !text.endsWith("\n")) text += "\n\n";
               text += `${simulationMarker(call.input)}\n`;
             });
-            turns.push({ role: "user", content: outcomes.map((o) => o.result) });
+            // Solving and answer checks move the tutoring policy on; their results carry it.
+            turns.push({ role: "user", content: outcomes.map((o, i) => turnTutor.afterTool(calls[i].name, o)) });
             scheduleFlush();
             continue;
           }
@@ -517,11 +536,14 @@ export function useChat() {
         activity = activity.map((a) => (a.status === "running" ? { ...a, status: "done" } : a));
         thinkingMs ??= Date.now() - startedAt;
 
+        // A correction is the app's follow-up to a math check, not a tutoring turn: it records what
+        // its tool calls found, but not as help on the ladder.
+        const tutoring = tutor?.record(!correction);
         if (status === "refused") {
           // Partial output from a declined response is discarded.
-          patch({ text: "", turns: [], display: undefined, sources: undefined, activity, thinkingMs, status });
+          patch({ text: "", turns: [], display: undefined, sources: undefined, activity, thinkingMs, status, tutoring: undefined });
         } else if (status === "error") {
-          patch({ text: withoutSimulations(text), turns: [...turns], activity, thinkingMs, status, error });
+          patch({ text: withoutSimulations(text), turns: [...turns], activity, thinkingMs, status, error, tutoring });
         } else {
           const finalTurns = closeTurns(
             stepText.trim() ? [...turns, { role: "assistant", content: [{ type: "text", text: stepText }] }] : turns,
@@ -538,7 +560,29 @@ export function useChat() {
             thinkingMs,
             status,
             error: exhausted ? "Ainsley stopped after too many steps." : undefined,
+            tutoring,
           });
+          // Review the help it gave on the problem in progress, unless that's already solved.
+          const problem = tutor?.focus();
+          if (!correction && tutoring && problem && problem.verdict !== "correct" && finalText.trim()) {
+            startReview({
+              conversationId,
+              replyId: assistantId,
+              problemId: problem.id,
+              problem: problem.problem,
+              allowed: tutoring.allowed,
+              attempted: problem.attempts > 0,
+              reply: finalText,
+              history,
+              onReviewed: (fields) =>
+                updateConversation(conversationId, (c) => ({
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === assistantId && m.tutoring ? { ...m, tutoring: { ...m.tutoring, ...fields } } : m,
+                  ),
+                })),
+            });
+          }
         }
         finished = true;
         if (toAudit) auditReply(conversationId, assistantId, history, { text: toAudit, activity });
