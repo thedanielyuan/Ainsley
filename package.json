@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "eval": "node --env-file-if-exists=.env.local evals/run.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
