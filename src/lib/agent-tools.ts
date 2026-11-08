@@ -2,11 +2,13 @@ import { parseEvaluateInput, VERDICT_LABELS, workAttachments } from "./answer-ch
 import { runCourseTool, type ToolContext, type ToolOutcome } from "./course-tools";
 import { conceptNames } from "./knowledge";
 import { getLibrary } from "./library";
+import { checkLabel, formatCheck, parseCheckInput } from "./math-check";
 import { parsePrerequisiteMap, parseTraceInput, type TraceResponse } from "./prerequisite-map";
 import { afterCheck, traceReport, traceRequest } from "./prerequisites";
 import { problemId, savedSolution, saveSolution } from "./problems";
 import { formatSolution, parseSolution, parseSolveInput, SOLUTION_LABELS } from "./solution";
 import {
+  CHECK_TOOL,
   EVALUATE_TOOL,
   MODULE_TOOL,
   OPEN_TOOL,
@@ -15,15 +17,16 @@ import {
   SIMULATION_TOOL,
   SOLVE_TOOL,
 } from "./tool-names";
-import type { Activity, EvaluateResponse, Material, SolveResponse, VerifiedSolution } from "./types";
+import type { Activity, CheckResponse, EvaluateResponse, Material, SolveResponse, VerifiedSolution } from "./types";
 
 /**
  * Runs the tool calls Ainsley makes on the browser's side of its loop, and describes each for the
  * activity list under a reply. Course tools read the local library; solving goes to /api/solve
  * (and the solution is saved here), answer checks to /api/evaluate (and what they show goes into
- * the student's knowledge map), prerequisite maps to /api/prerequisites (and into the knowledge
- * map, with where the student's courses teach each part); a simulation is checked here and drawn
- * in the reply. (Web search and fetch run on Anthropic's side.)
+ * the student's knowledge map), math checks to /api/check, prerequisite maps to
+ * /api/prerequisites (and into the knowledge map, with where the student's courses teach each
+ * part); a simulation is checked here and drawn in the reply. (Web search and fetch run on
+ * Anthropic's side.)
  */
 
 export interface AgentToolContext extends ToolContext {
@@ -38,6 +41,7 @@ export async function runTool(
 ): Promise<ToolOutcome> {
   if (call.name === SOLVE_TOOL) return runSolve(call, ctx, signal);
   if (call.name === EVALUATE_TOOL) return runEvaluate(call, ctx, signal);
+  if (call.name === CHECK_TOOL) return runCheck(call, signal);
   if (call.name === SIMULATION_TOOL) return runSimulation(call);
   if (call.name === PREREQUISITES_TOOL) return runTrace(call, ctx, signal);
   return runCourseTool(call, ctx, signal);
@@ -113,7 +117,8 @@ async function runSolve(
   const saved = await savedSolution(id);
   if (saved) return answered(call.id, formatSolution(id, saved), SOLUTION_LABELS[saved.status]);
 
-  const fallback = "Work the problem out yourself, carefully, and don't present your answer as verified.";
+  const fallback =
+    "Nothing was verified. Check what you'd tell the student with check_math, and tell them you're not sure of anything it can't verify.";
   const reply = await post<Partial<SolveResponse>>(
     "/api/solve",
     { input, attachments: workAttachments(ctx.attachments) },
@@ -128,6 +133,9 @@ async function runSolve(
   await saveSolution(id, ctx.courseId, input.problem, solution);
   return answered(call.id, formatSolution(id, solution), SOLUTION_LABELS[solution.status]);
 }
+
+const EVALUATE_FALLBACK =
+  "Check their result with check_math; if it can't settle whether they're right, tell them you're not sure and what you couldn't check.";
 
 async function runEvaluate(
   call: { id: string; input: unknown },
@@ -152,12 +160,12 @@ async function runEvaluate(
     { input, attachments: workAttachments(ctx.attachments), solution, concepts },
     call,
     signal,
-    { what: "The answer check", fallback: "Check the answer yourself, carefully.", detail: "Couldn't check" },
+    { what: "The answer check", fallback: EVALUATE_FALLBACK, detail: "Couldn't check" },
   );
   if ("outcome" in reply) return reply.outcome;
   const { content, verdict } = reply.data;
   if (typeof content !== "string" || !verdict) {
-    return failed(call.id, "The answer check failed. Check the answer yourself, carefully.", "Couldn't check");
+    return failed(call.id, `The answer check failed. ${EVALUATE_FALLBACK}`, "Couldn't check");
   }
   const prerequisite = await afterCheck(reply.data, ctx).catch((err) => {
     console.error("[ainsley] couldn't record the answer check in the knowledge map:", err);
@@ -191,6 +199,25 @@ async function runTrace(
   return answered(call.id, content, detail);
 }
 
+async function runCheck(call: { id: string; input: unknown }, signal: AbortSignal): Promise<ToolOutcome> {
+  const input = parseCheckInput(call.input);
+  if (typeof input === "string") return failed(call.id, input, "Couldn't run");
+
+  const fallback =
+    "Nothing was verified: don't state these claims as fact. Leave them out, or tell the student you're not sure of them because you couldn't check them.";
+  const reply = await post<Partial<CheckResponse>>("/api/check", { input }, call, signal, {
+    what: "The math check",
+    fallback,
+    detail: "Couldn't check",
+  });
+  if ("outcome" in reply) return reply.outcome;
+  const claims = reply.data.claims;
+  if (!Array.isArray(claims) || claims.length !== input.claims.length) {
+    return failed(call.id, `The math check returned an unexpected answer. ${fallback}`, "Couldn't check");
+  }
+  return answered(call.id, formatCheck(claims), checkLabel(claims));
+}
+
 /** A tool call as the activity list shows it while it runs; null for calls that aren't shown. */
 export function toolActivity(name: string, input: Record<string, unknown>, id: string): Activity | null {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -208,6 +235,10 @@ export function toolActivity(name: string, input: Record<string, unknown>, id: s
       return { id, kind: "solve", label: str(input.problem).replace(/\s+/g, " ").trim(), status: "running" };
     case EVALUATE_TOOL:
       return { id, kind: "evaluate", label: str(input.problem).replace(/\s+/g, " ").trim(), status: "running" };
+    case CHECK_TOOL: {
+      const n = Array.isArray(input.claims) ? input.claims.length : 0;
+      return { id, kind: "check", label: n ? `${n} claim${n === 1 ? "" : "s"}` : "", status: "running" };
+    }
     case SIMULATION_TOOL: {
       const names: Record<string, string> = {
         free_body_diagram: "free-body diagram",

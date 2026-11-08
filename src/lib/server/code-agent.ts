@@ -5,9 +5,10 @@ import { getClient } from "./anthropic";
 import { toReplayContent } from "./replay";
 
 /**
- * A Claude Opus 5.5 call that can run code (sympy, numpy, scipy) in a sandbox before answering in
- * a fixed JSON shape, with no stake in the tutoring conversation. The two solvers, the verifier
- * and the answer checker each run this way.
+ * A Claude call that can run code (sympy, numpy, scipy) in a sandbox before answering in a fixed
+ * JSON shape, with no stake in the tutoring conversation. The two solvers, the verifier, the
+ * answer checker and the math checker run this way, on Claude Opus 5.5 at high effort unless a
+ * caller says otherwise.
  */
 
 const MODEL = "claude-opus-5-5";
@@ -24,7 +25,11 @@ export async function runCodeAgent(opts: {
   content: ApiBlock[];
   schema: Record<string, unknown>;
   signal: AbortSignal;
+  /** Another model for a quicker check (claude-haiku-5-5 has no server-side fallback). */
+  model?: "claude-haiku-5-5";
+  effort?: "high" | "max";
 }): Promise<Record<string, unknown> | null> {
+  const model = opts.model ?? MODEL;
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: opts.content }];
   let container: string | undefined;
 
@@ -32,7 +37,7 @@ export async function runCodeAgent(opts: {
     const message = await getClient()
       .beta.messages.stream(
         {
-          model: MODEL,
+          model,
           max_tokens: MAX_TOKENS,
           system: opts.system,
           // Not alongside web search here, so a standalone sandbox for checking work is safe to add.
@@ -40,11 +45,10 @@ export async function runCodeAgent(opts: {
           messages,
           ...(container ? { container } : {}),
           // These have to be right: a wrong solution or verdict teaches the wrong thing.
-          output_config: { effort: "high", format: { type: "json_schema", schema: opts.schema } },
+          output_config: { effort: opts.effort ?? "high", format: { type: "json_schema", schema: opts.schema } },
           thinking: { type: "adaptive", display: "omitted" },
           // If a safety classifier declines, retry on Anthropic's recommended model.
-          fallbacks: "default",
-          betas: ["server-side-fallback-2026-07-01"],
+          ...(model === MODEL ? { fallbacks: "default" as const, betas: ["server-side-fallback-2026-07-01"] } : {}),
         },
         { signal: opts.signal },
       )

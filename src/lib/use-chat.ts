@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { runTool, toolActivity } from "./agent-tools";
-import { closeTurns, messageContent, nameThought, streamChat, toApiMessages } from "./chat-client";
+import { closeTurns, correctionPrefix, messageContent, nameThought, streamChat, toApiMessages } from "./chat-client";
 import { summarizeReply } from "./citations";
 import { SIMULATION_TOOL, simulationMarker, withoutSimulations } from "./simulation/marker";
 import { buildContext, lastContextState, resolveScope } from "./course-context";
@@ -13,6 +13,8 @@ import {
   loadLibrary,
   pruneOrphanMaterials,
 } from "./library";
+import { auditStatus, containsMath, correctionRequest, unsettledAnswers } from "./math-check";
+import { checkReply } from "./reply-check";
 import {
   loadConversations,
   removeAllConversations,
@@ -27,6 +29,7 @@ import type {
   ChatMessage,
   ChatScope,
   Conversation,
+  MathAudit,
   Material,
   MessageStatus,
 } from "./types";
@@ -69,6 +72,24 @@ function settle(conversation: Conversation): Conversation {
       };
     }),
   };
+}
+
+/**
+ * `history` comes from the last committed state, which can miss a math check that finished a
+ * moment ago: keep that result rather than putting the reply back to "checking".
+ */
+function withFinishedAudits(history: ChatMessage[], current: ChatMessage[]): ChatMessage[] {
+  const latest = new Map(current.map((m) => [m.id, m.audit]));
+  return history.map((m) => {
+    const audit = latest.get(m.id);
+    if (!audit || audit.status === "running" || (m.audit && m.audit.status !== "running")) return m;
+    return { ...m, audit };
+  });
+}
+
+/** A reply whose check found a false claim, not yet corrected (a correction itself never is). */
+function needsCorrecting(m: ChatMessage) {
+  return m.role === "assistant" && !m.correction && m.audit?.status === "wrong" && !m.audit.corrected;
 }
 
 function attachmentMeta(m: Material): AttachmentMeta {
@@ -125,6 +146,11 @@ export function useChat() {
   const controllers = useRef(new Map<string, AbortController>());
   const saved = useRef(new Map<string, Conversation>());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Checks of finished replies' math, by reply; chats waiting to post a correction; and checks
+  // a reload interrupted, to run again once the library is loaded.
+  const audits = useRef(new Map<string, { conversationId: string; controller: AbortController }>());
+  const needsCorrection = useRef(new Set<string>());
+  const interruptedAudits = useRef<{ conversationId: string; messageId: string }[]>([]);
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -144,6 +170,10 @@ export function useChat() {
         const conversation = settle(raw);
         map[conversation.id] = conversation;
         if (conversation === raw) saved.current.set(conversation.id, conversation);
+        for (const m of conversation.messages) {
+          if (m.audit?.status === "running") interruptedAudits.current.push({ conversationId: conversation.id, messageId: m.id });
+          if (needsCorrecting(m)) needsCorrection.current.add(conversation.id);
+        }
       }
       setConversations(map);
       pruneOrphanMaterials(new Set(Object.keys(map)));
@@ -210,17 +240,59 @@ export function useChat() {
   );
 
   /**
+   * Checks the math in a finished reply (see /api/audit) and records the result on it. A false
+   * claim queues a correction, which Ainsley posts once the chat is idle.
+   */
+  const auditReply = useCallback(
+    (conversationId: string, messageId: string, history: ChatMessage[], reply: Pick<ChatMessage, "text" | "activity">) => {
+      audits.current.get(messageId)?.controller.abort();
+      const controller = new AbortController();
+      audits.current.set(messageId, { conversationId, controller });
+      const record = (audit: MathAudit) =>
+        updateConversation(conversationId, (c) => ({
+          ...c,
+          messages: c.messages.map((m) => (m.id === messageId ? { ...m, audit } : m)),
+        }));
+      record({ status: "running" });
+      checkReply(history, reply.text, controller.signal)
+        .then((checked) => {
+          const claims = [...checked, ...unsettledAnswers(reply.activity)];
+          const status = auditStatus(claims);
+          record({ status, claims });
+          if (status === "wrong") needsCorrection.current.add(conversationId);
+        })
+        .catch((err) => {
+          // A check that can't run leaves the math unverified, never verified.
+          if (!controller.signal.aborted) {
+            console.warn("[ainsley] checking a reply's math failed:", err);
+            record({ status: "failed" });
+          }
+        })
+        .finally(() => {
+          if (audits.current.get(messageId)?.controller === controller) audits.current.delete(messageId);
+        });
+    },
+    [updateConversation],
+  );
+
+  /**
    * Replaces the conversation with `history` and streams a reply onto it. A reply can take
    * several requests: when Ainsley calls a course tool, the tool runs here (the library is in
    * the browser) and the result goes back in a new request; a `pause_turn` from a long web
-   * search is resumed the same way.
+   * search is resumed the same way. With `correction`, the reply is a correction the app asked
+   * for after checking an earlier reply's math.
    */
   const generate = useCallback(
-    async (conversationId: string, history: ChatMessage[]) => {
+    async (conversationId: string, history: ChatMessage[], correction?: ChatMessage["correction"]) => {
       controllers.current.get(conversationId)?.abort();
       const controller = new AbortController();
       controllers.current.set(conversationId, controller);
       setStreaming((s) => ({ ...s, [conversationId]: true }));
+      // Replies this one replaces (regenerating, editing) no longer need their math checked.
+      const kept = new Set(history.map((m) => m.id));
+      for (const [id, audit] of audits.current) {
+        if (audit.conversationId === conversationId && !kept.has(id)) audit.controller.abort();
+      }
 
       const startedAt = Date.now();
       const assistantId = createId();
@@ -228,12 +300,20 @@ export function useChat() {
         ...c,
         updatedAt: startedAt,
         messages: [
-          ...history,
-          { id: assistantId, role: "assistant", text: "", status: "streaming", createdAt: startedAt },
+          ...withFinishedAudits(history, c.messages),
+          {
+            id: assistantId,
+            role: "assistant",
+            text: "",
+            status: "streaming",
+            createdAt: startedAt,
+            ...(correction ? { correction } : {}),
+          },
         ],
       }));
 
       const base = toApiMessages(history, getLibrary());
+      if (correction) base.push(...correctionPrefix(correction));
       const turns: ApiTurn[] = [];
       let activity: Activity[] = [];
       let text = "";
@@ -261,6 +341,8 @@ export function useChat() {
         activity = activity.map((a) => (a.id === id ? { ...a, ...update } : a));
       };
 
+      // The finished reply's text, when it has math to check.
+      let toAudit: string | null = null;
       // Whether the answer has begun since Ainsley's last step; until it has, Ainsley is working.
       let answering = false;
       // Set once the reply is saved: a thought named after that updates the saved reply.
@@ -445,8 +527,10 @@ export function useChat() {
             stepText.trim() ? [...turns, { role: "assistant", content: [{ type: "text", text: stepText }] }] : turns,
           );
           const summary = summarizeReply(finalTurns, getLibrary());
+          const finalText = summary.text || withoutSimulations(text);
+          if ((status === "done" || status === "truncated") && containsMath(finalText)) toAudit = finalText;
           patch({
-            text: summary.text || withoutSimulations(text),
+            text: finalText,
             display: summary.display || undefined,
             sources: summary.sources.length ? summary.sources : undefined,
             turns: finalTurns,
@@ -457,6 +541,7 @@ export function useChat() {
           });
         }
         finished = true;
+        if (toAudit) auditReply(conversationId, assistantId, history, { text: toAudit, activity });
 
         if (controllers.current.get(conversationId) === controller) {
           controllers.current.delete(conversationId);
@@ -464,8 +549,35 @@ export function useChat() {
         }
       }
     },
-    [updateConversation, updateMessage],
+    [auditReply, updateConversation, updateMessage],
   );
+
+  // Once a chat is idle, post the correction for a reply whose check found a false claim.
+  useEffect(() => {
+    for (const id of needsCorrection.current) {
+      if (controllers.current.has(id)) continue;
+      needsCorrection.current.delete(id);
+      const conversation = conversations[id];
+      const index = conversation?.messages.findIndex(needsCorrecting) ?? -1;
+      if (!conversation || index === -1) continue;
+      const reply = conversation.messages[index];
+      const request = correctionRequest(reply.audit?.claims ?? [], reply.text, index === conversation.messages.length - 1);
+      const messages = conversation.messages.map((m, i) =>
+        i === index && m.audit ? { ...m, audit: { ...m.audit, corrected: true } } : m,
+      );
+      void generate(id, messages, { of: reply.id, ...request });
+    }
+  }, [conversations, streaming, generate]);
+
+  // Checks a reload interrupted run again once the library is loaded.
+  useEffect(() => {
+    if (!ready) return;
+    for (const { conversationId, messageId } of interruptedAudits.current.splice(0)) {
+      const messages = conversationsRef.current[conversationId]?.messages ?? [];
+      const index = messages.findIndex((m) => m.id === messageId);
+      if (index !== -1) auditReply(conversationId, messageId, messages.slice(0, index), messages[index]);
+    }
+  }, [ready, auditReply]);
 
   /** Sends a message (with any attachments) to the open chat, or starts a new one. */
   const send = useCallback(
@@ -559,6 +671,7 @@ export function useChat() {
   const remove = useCallback(
     (id: string) => {
       controllers.current.get(id)?.abort();
+      for (const audit of audits.current.values()) if (audit.conversationId === id) audit.controller.abort();
       saved.current.delete(id);
       setConversations((prev) => omit(prev, id));
       void removeConversation(id);
@@ -570,6 +683,7 @@ export function useChat() {
 
   const removeAll = useCallback(() => {
     for (const controller of controllers.current.values()) controller.abort();
+    for (const audit of audits.current.values()) audit.controller.abort();
     saved.current.clear();
     setConversations({});
     void removeAllConversations();

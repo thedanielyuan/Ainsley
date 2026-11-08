@@ -1,6 +1,7 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
+  CHECK_TOOL,
   EVALUATE_TOOL,
   MODULE_TOOL,
   OPEN_TOOL,
@@ -16,10 +17,11 @@ import {
  *
  * Declared identically on every request, from a chat's first turn: the tool set is part of the
  * prefix that preserved thinking and the prompt cache are bound to. The course tools,
- * solve_problem, evaluate_answer, show_simulation and trace_prerequisites run in the browser
- * (where the library, saved solutions and the student's knowledge map live; solving goes on to
- * /api/solve, answer checks to /api/evaluate, prerequisite maps to /api/prerequisites, and a
- * simulation is drawn in the reply); web search and fetch run on Anthropic's side.
+ * solve_problem, evaluate_answer, check_math, show_simulation and trace_prerequisites run in the
+ * browser (where the library, saved solutions and the student's knowledge map live; solving goes
+ * on to /api/solve, answer checks to /api/evaluate, math checks to /api/check, prerequisite maps
+ * to /api/prerequisites, and a simulation is drawn in the reply); web search and fetch run on
+ * Anthropic's side.
  */
 
 // Homework-answer sites: unreliable, and reading their solutions would do the student's
@@ -107,7 +109,7 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     description:
       "Work out a verified solution to a problem before you guide the student through it, show a worked example, or set it as practice. Two solvers work it independently, verifying calculations, algebra, and code by running Python; their answers are compared, checked against an answer key from their materials if you pass one, and any difference is settled or flagged. " +
       "Returns, for you rather than the student: whether it's verified, the final answers, the steps a student would write, what a complete answer must contain, and a problem id to pass to evaluate_answer when the student attempts it. " +
-      "Use it for multi-step problems where correctness matters: calculations, derivations, proofs, code. Skip it for quick recall, a one-step calculation, or a conceptual question. A new problem takes from about 15 seconds to a couple of minutes to solve; the same problem again returns the saved solution. " +
+      "Use it for multi-step problems: calculations, derivations, proofs, code. For a single result you're about to state (a value, one calculation, an identity, a step of an explanation, the answer to a quick practice question), use check_math instead; a conceptual question with no math to state needs neither. A new problem takes from about 15 seconds to a couple of minutes to solve; the same problem again returns the saved solution. " +
       "Photos and short PDFs attached to the student's latest message are shown to the solvers too.",
     input_schema: {
       type: "object",
@@ -137,7 +139,7 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     name: EVALUATE_TOOL,
     description:
       "Have an independent checker mark a student's answer or worked solution step by step. Each step of their working comes back marked (correct, an error, following from an earlier error, missing a justification, or unreadable), with calculations, algebra, and code verified by running Python and equivalent forms and other valid methods accepted; plus a verdict (correct, partially correct, incorrect, incomplete), what's right, the first error with the misconception likely behind it (and a question that tells two possible misconceptions apart), how sure it is that it read their work right, and a hint. " +
-      "Use it whenever the student offers a substantive attempt — a calculation, derivation, proof, code, a multi-step solution, or an explanation to judge against key ideas — before you tell them whether it's right. Judge quick recall answers (a term, a single fact) yourself. " +
+      "Use it whenever the student offers a substantive attempt — a calculation, derivation, proof, code, a multi-step solution, or an explanation to judge against key ideas — before you tell them whether it's right. Judge quick recall answers (a term, a single fact) yourself, with check_math for any math in them. " +
       "If you worked the problem out with solve_problem, pass its problem_id, so the check starts from that verified solution. If their materials might hold an answer key, worked solution, or marking scheme for the problem, find it first and pass it as `reference`. " +
       "Photos and short PDFs attached to the student's latest message are shown to the checker too. The assessment is for you, not the student.",
     input_schema: {
@@ -169,6 +171,52 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
         },
       },
       required: ["problem", "student_answer"],
+      additionalProperties: false,
+    },
+    eager_input_streaming: true,
+  },
+  {
+    name: CHECK_TOOL,
+    description:
+      "Check mathematical claims by running code (sympy) before you state them as fact. Each claim comes back verified, false (with the correct value), or couldn't check. " +
+      "Use it for the math solve_problem and evaluate_answer don't cover: a value or a single calculation, a step of an explanation, a formula applied to a case, an identity, a property (this matrix is invertible, this series converges), a hint that states a result, and the answer to a quick practice question you set. " +
+      "A whole problem you'll guide the student through, work as an example, or set as practice goes to solve_problem first: it also checks that the method fits the problem, which checking single claims can't. " +
+      "Check the claims of a reply together in one call, before you write them; a handful takes a few seconds. " +
+      "State only what comes back verified. For a false claim, use the correct value it gives. For one it couldn't check, try a clearer sympy form, or tell the student you're not sure of it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        claims: {
+          type: "array",
+          description: "The claims to check, up to 25.",
+          items: {
+            type: "object",
+            properties: {
+              claim: {
+                type: "string",
+                description: 'The claim as you\'ll state it to the student, LaTeX for math, e.g. "$\\int_0^1 x^2\\,dx = \\tfrac13$".',
+              },
+              sympy: {
+                type: "string",
+                description:
+                  'A self-contained sympy expression for what the claim computes, e.g. "integrate(x**2, (x, 0, 1))", or a sympy boolean for a property, e.g. "Matrix([[1, 2], [3, 4]]).det() != 0".',
+              },
+              value: {
+                type: "string",
+                description: 'What the claim says it equals, as a sympy expression, e.g. "Rational(1, 3)"; "True" for a property.',
+              },
+            },
+            required: ["claim", "sympy", "value"],
+            additionalProperties: false,
+          },
+        },
+        assumptions: {
+          type: "string",
+          description:
+            "Optional. What the symbols mean: domains (x real, n a positive integer), units, and definitions from the problem the claims rely on.",
+        },
+      },
+      required: ["claims"],
       additionalProperties: false,
     },
     eager_input_streaming: true,

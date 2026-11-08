@@ -117,7 +117,7 @@ export function formatSolution(id: string, s: VerifiedSolution): string {
     lines.push(`Verified. ${s.verification}`.trim());
   } else {
     lines.push(
-      `NOT verified: the solvers disagreed${s.doubt ? ` (${s.doubt})` : ""}. The answer below is the more likely one; treat it as uncertain.`,
+      `NOT verified: the solvers disagreed${s.doubt ? ` (${s.doubt})` : ""}. The answer below is the more likely one, not a settled one.`,
     );
   }
   if (s.reference === "agrees") lines.push("It agrees with the answer key from their materials.");
@@ -131,7 +131,7 @@ export function formatSolution(id: string, s: VerifiedSolution): string {
     "",
     s.status === "verified"
       ? "Use it to guide the student, not to hand it over: it tells you where the problem is going, so give them the next step they need and keep the answer back until they've had a real go."
-      : "Don't present this answer as settled: guide them by the method, judge their reasoning on its own merits, and tell them if the problem looks ambiguous.",
+      : "Tell the student, in those words, that you're not sure of the answer to this one (\"I'm not sure …\"), and what couldn't be verified (above). Don't settle it yourself: check_math can confirm computations, not that the method is right, so say you're not sure however your own checks come out. Guide them by the method, judge their reasoning on its own merits, and tell them if the problem looks ambiguous.",
     `When they attempt it, pass problem_id "${id}" to evaluate_answer.`,
   );
   return lines.join("\n");

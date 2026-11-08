@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  Calculator,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
@@ -12,19 +13,23 @@ import {
   Link2,
   Network,
   Search,
+  ShieldAlert,
+  ShieldCheck,
   Shapes,
   SquareFunction,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
-import type { Activity } from "@/lib/types";
+import { auditLabel } from "@/lib/math-check";
+import type { Activity, MathAudit } from "@/lib/types";
 import { cn, formatDuration } from "@/lib/utils";
 
 /**
  * What Ainsley did before answering, laid out like Grok's thinking. While it works, a timeline
  * grows above a "Working for 12s" row: each stretch of thinking by name ("Planning a hint for
  * part (b)"), and each lookup. When the answer starts, the row turns into "Worked for 28s"; when
- * the reply is done, the steps fold into that line, which opens them again.
+ * the reply is done, the steps fold into that line, which opens them again. Beside it, the check
+ * of the reply's math says "Math checked" or "Not verified".
  */
 
 /** Below this, a reply with no steps doesn't say how long it took. */
@@ -41,14 +46,15 @@ const ICONS: Record<Activity["kind"], LucideIcon> = {
   module: Layers,
   solve: SquareFunction,
   evaluate: ClipboardCheck,
+  check: Calculator,
   simulation: Shapes,
   prerequisites: Network,
   web_search: Globe,
   web_fetch: Link2,
 };
 
-/** Steps that stand alone even when repeated: thoughts, solves, answer checks, simulations and prerequisite maps. */
-const STANDALONE = new Set<Activity["kind"]>(["thought", "solve", "evaluate", "simulation", "prerequisites"]);
+/** Steps that stand alone even when repeated: thoughts, solves, answer and math checks, simulations and prerequisite maps. */
+const STANDALONE = new Set<Activity["kind"]>(["thought", "solve", "evaluate", "check", "simulation", "prerequisites"]);
 
 /** Result filtering can repeat an identical lookup; show it once. */
 function dedupe(activity: Activity[]) {
@@ -103,6 +109,8 @@ function describe(a: Activity): ReactNode {
       return now ? "Solving the problem" : "Solved the problem";
     case "evaluate":
       return now ? "Checking your answer" : "Checked your answer";
+    case "check":
+      return now ? "Checking the math" : "Checked the math";
     case "simulation":
       return `${now ? "Drawing" : "Drew"} a ${a.label}`;
     case "prerequisites":
@@ -181,19 +189,77 @@ function SearchGroup({ items }: { items: Activity[] }) {
   );
 }
 
-function StepList({ steps, id }: { steps: Step[]; id?: string }) {
+/** The check of the reply's math, as the last step in the list. */
+function auditStep(audit: MathAudit | undefined): Activity | null {
+  const label = audit && auditLabel(audit.status);
+  if (!audit || !label) return null;
+  const claims = audit.claims ?? [];
+  const count = (n: number, what = "claim") => `${n} ${what}${n === 1 ? "" : "s"}`;
+  const wrong = claims.filter((c) => c.status === "false").length;
+  const unchecked = claims.filter((c) => c.status === "cannot_check").length;
+  let text = "Checking the math in this reply";
+  if (audit.status === "checked") text = `Checked ${count(claims.length)} by running code`;
+  else if (audit.status === "wrong") text = `Found ${count(wrong, "false claim")}${audit.corrected ? ", corrected below" : ""}`;
+  else if (audit.status === "unverified") text = `Couldn't verify ${unchecked} of ${count(claims.length)}`;
+  else if (audit.status === "failed") text = "Couldn't check the math in this reply";
+  return { id: "audit", kind: "check", label: text, status: audit.status === "running" ? "running" : "done" };
+}
+
+function StepList({ steps, id, audit }: { steps: Step[]; id?: string; audit?: MathAudit }) {
+  const last = auditStep(audit);
+  const all: Step[] = last ? [...steps, { type: "one", item: last }] : steps;
   return (
     <ol id={id} aria-label="What Ainsley did" className="flex flex-col gap-2">
-      {steps.map((step, i) => (
+      {all.map((step, i) => (
         <li key={step.type === "one" ? step.item.id : step.id} className="relative">
           {/* The line joining this step's icon to the next one's, past any steps folded under it. */}
-          {i < steps.length - 1 && (
+          {i < all.length - 1 && (
             <span aria-hidden="true" className="absolute -bottom-[9px] left-3.5 top-[23px] w-px -translate-x-1/2 bg-line" />
           )}
-          {step.type === "one" ? <StepRow item={step.item} /> : <SearchGroup items={step.items} />}
+          {step.type === "one" ? (
+            step.item === last ? <AuditRow audit={audit!} step={last} /> : <StepRow item={step.item} />
+          ) : (
+            <SearchGroup items={step.items} />
+          )}
         </li>
       ))}
     </ol>
+  );
+}
+
+function AuditRow({ audit, step }: { audit: MathAudit; step: Activity }) {
+  const Icon = audit.status === "checked" ? ShieldCheck : audit.status === "running" ? Calculator : ShieldAlert;
+  return (
+    <div className="flex min-w-0 items-start gap-0.5 text-sm leading-6">
+      <IconCell>
+        <Icon className="size-3.5" />
+      </IconCell>
+      <span className={cn("min-w-0 flex-1 truncate ps-0.5", step.status === "running" ? "shimmer" : "text-subtle")}>
+        {step.label}
+      </span>
+    </div>
+  );
+}
+
+/** "Math checked" or "Not verified" beside "Worked for 28s", or the check still running. */
+function AuditBadge({ audit }: { audit?: MathAudit }) {
+  const label = audit && auditLabel(audit.status);
+  if (!audit || !label) return null;
+  if (audit.status === "running") {
+    return (
+      <span role="status" className="inline-flex items-center gap-1.5 text-sm leading-6 text-subtle">
+        <span aria-hidden="true" className="work-spinner" />
+        <span className="shimmer">{label}</span>
+      </span>
+    );
+  }
+  const checked = audit.status === "checked";
+  const Icon = checked ? ShieldCheck : ShieldAlert;
+  return (
+    <span role="status" className={cn("inline-flex items-center gap-1 text-sm leading-6", checked ? "text-subtle" : "text-muted")}>
+      <Icon aria-hidden="true" className="size-3.5" />
+      {label}
+    </span>
   );
 }
 
@@ -225,6 +291,7 @@ export function WorkTimeline({
   live,
   startedAt,
   workMs,
+  audit,
 }: {
   activity: Activity[];
   /** The reply is still streaming. */
@@ -232,6 +299,8 @@ export function WorkTimeline({
   startedAt: number;
   /** How long Ainsley worked before answering; undefined while it's still working. */
   workMs?: number;
+  /** The check of the reply's math, once it's finished. */
+  audit?: MathAudit;
 }) {
   const steps = useMemo(() => toSteps(activity), [activity]);
   const [open, setOpen] = useState(false);
@@ -250,20 +319,33 @@ export function WorkTimeline({
     );
   }
 
-  if (!steps.length) return workMs !== undefined && workMs >= MIN_SHOWN_MS ? workedLine : null;
+  const badge = <AuditBadge audit={audit} />;
+  if (!steps.length) {
+    const showWorked = workMs !== undefined && workMs >= MIN_SHOWN_MS;
+    if (!showWorked && !auditLabel(audit?.status ?? "none")) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-x-3">
+        {showWorked && workedLine}
+        {badge}
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-2">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-controls={listId}
-        className="flex w-fit items-center gap-1 rounded-md text-sm leading-6 text-subtle transition-colors hover:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
-      >
-        {worked}
-        <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-      </button>
-      {open && <StepList id={listId} steps={steps} />}
+      <div className="flex flex-wrap items-center gap-x-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls={listId}
+          className="flex w-fit items-center gap-1 rounded-md text-sm leading-6 text-subtle transition-colors hover:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        >
+          {worked}
+          <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
+        </button>
+        {badge}
+      </div>
+      {open && <StepList id={listId} steps={steps} audit={audit} />}
     </div>
   );
 }
