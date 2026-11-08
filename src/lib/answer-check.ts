@@ -8,6 +8,8 @@ import type { AnswerVerdict, ApiBlock, Material } from "./types";
 export interface EvaluateInput {
   problem: string;
   student_answer: string;
+  /** The id solve_problem gave the problem: the check then works from its verified solution. */
+  problem_id?: string;
   reference?: string;
   course_expectations?: string;
 }
@@ -15,6 +17,7 @@ export interface EvaluateInput {
 const LIMITS: Record<keyof EvaluateInput, number> = {
   problem: 20_000,
   student_answer: 30_000,
+  problem_id: 40,
   reference: 40_000,
   course_expectations: 5_000,
 };
@@ -28,18 +31,31 @@ export const VERDICT_LABELS: Record<AnswerVerdict, string> = {
   cannot_evaluate: "Couldn't check",
 };
 
-/** Validates evaluate_answer's input (streamed tool input isn't checked by the API), or says what's wrong. */
-export function parseEvaluateInput(raw: unknown): EvaluateInput | string {
+/**
+ * Reads a tool call's text fields, trimmed and within their limits (streamed tool input isn't
+ * checked by the API), or says what's wrong.
+ */
+export function readTextFields<K extends string>(
+  raw: unknown,
+  limits: Record<K, number>,
+): Partial<Record<K, string>> | string {
   const input = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const out: Partial<EvaluateInput> = {};
-  for (const key of Object.keys(LIMITS) as Array<keyof EvaluateInput>) {
+  const out: Partial<Record<K, string>> = {};
+  for (const key of Object.keys(limits) as K[]) {
     const value = input[key];
     if (value === undefined || value === null) continue;
     if (typeof value !== "string") return `\`${key}\` must be text.`;
     const text = value.trim();
-    if (text.length > LIMITS[key]) return `\`${key}\` is too long (over ${LIMITS[key].toLocaleString("en")} characters).`;
+    if (text.length > limits[key]) return `\`${key}\` is too long (over ${limits[key].toLocaleString("en")} characters).`;
     if (text) out[key] = text;
   }
+  return out;
+}
+
+/** Validates evaluate_answer's input, or says what's wrong. */
+export function parseEvaluateInput(raw: unknown): EvaluateInput | string {
+  const out = readTextFields(raw, LIMITS);
+  if (typeof out === "string") return out;
   if (!out.problem) return "`problem` must be the question or task as the student was given it.";
   if (!out.student_answer) return "`student_answer` must be the student's answer and working, verbatim.";
   return out as EvaluateInput;

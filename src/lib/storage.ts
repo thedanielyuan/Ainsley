@@ -1,5 +1,5 @@
 import { clear, createStore, del, delMany, entries, get, set, type UseStore } from "idb-keyval";
-import type { Conversation, Course, Material } from "./types";
+import type { Conversation, Course, Material, SavedProblem } from "./types";
 
 // Everything lives in IndexedDB: thinking-block signatures and extracted course text make
 // this far too large for localStorage's ~5 MB quota. idb-keyval keeps one object store per
@@ -25,6 +25,8 @@ const files = () => getStore("ainsley-files", "files");
 const previews = () => getStore("ainsley-previews", "previews");
 // Handles to linked folders (File System Access API), so a course can read its folder again.
 const folders = () => getStore("ainsley-folders", "folders");
+// Problems Ainsley has worked out (solve_problem), by problem id, so each is solved once.
+const problems = () => getStore("ainsley-problems", "problems");
 
 async function loadAll<T>(store: UseStore | null): Promise<T[]> {
   if (!store) return [];
@@ -120,4 +122,16 @@ export async function loadFolderHandle<T>(courseId: string): Promise<T | undefin
 export async function removeFolderHandle(courseId: string) {
   const s = folders();
   if (s) await del(courseId, s);
+}
+
+// ---------- Solved problems ----------
+
+export async function loadProblem(id: string): Promise<SavedProblem | undefined> {
+  const s = problems();
+  return s ? get<SavedProblem>(id, s) : undefined;
+}
+
+export async function saveProblem(problem: SavedProblem) {
+  const s = problems();
+  if (s) await set(problem.id, problem, s);
 }

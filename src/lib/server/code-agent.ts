@@ -1,0 +1,83 @@
+import "server-only";
+import type Anthropic from "@anthropic-ai/sdk";
+import type { ApiBlock } from "@/lib/types";
+import { getClient } from "./anthropic";
+import { toReplayContent } from "./replay";
+
+/**
+ * A Claude Opus 5.5 call that can run code (sympy, numpy, scipy) in a sandbox before answering in
+ * a fixed JSON shape, with no stake in the tutoring conversation. The two solvers, the verifier
+ * and the answer checker each run this way.
+ */
+
+const MODEL = "claude-opus-5-5";
+// Thinking and code-execution output count toward max_tokens; the JSON itself is short.
+const MAX_TOKENS = 32_000;
+// Resumes after `pause_turn` (a long run of code execution).
+const MAX_RESUMES = 3;
+
+/** The call's JSON answer, or null if it declined (a safety refusal). */
+export async function runCodeAgent(opts: {
+  /** Names the call in logs and errors ("answer check"). */
+  label: string;
+  system: string;
+  content: ApiBlock[];
+  schema: Record<string, unknown>;
+  signal: AbortSignal;
+}): Promise<Record<string, unknown> | null> {
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: opts.content }];
+  let container: string | undefined;
+
+  for (let attempt = 0; attempt <= MAX_RESUMES; attempt++) {
+    const message = await getClient()
+      .beta.messages.stream(
+        {
+          model: MODEL,
+          max_tokens: MAX_TOKENS,
+          system: opts.system,
+          // Not alongside web search here, so a standalone sandbox for checking work is safe to add.
+          tools: [{ type: "code_execution_20260521", name: "code_execution" }],
+          messages,
+          ...(container ? { container } : {}),
+          // These have to be right: a wrong solution or verdict teaches the wrong thing.
+          output_config: { effort: "high", format: { type: "json_schema", schema: opts.schema } },
+          thinking: { type: "adaptive", display: "omitted" },
+          // If a safety classifier declines, retry on Anthropic's recommended model.
+          fallbacks: "default",
+          betas: ["server-side-fallback-2026-07-01"],
+        },
+        { signal: opts.signal },
+      )
+      .finalMessage();
+
+    logUsage(opts.label, message);
+    container = message.container?.id ?? container;
+
+    if (message.stop_reason === "pause_turn") {
+      messages.push({ role: "assistant", content: toReplayContent(message.content) });
+      continue;
+    }
+    if (message.stop_reason === "refusal") return null;
+    if (message.stop_reason === "max_tokens") throw new Error(`The ${opts.label} ran out of room before finishing.`);
+    return lastJson(message.content, opts.label);
+  }
+  throw new Error(`The ${opts.label} took too many steps.`);
+}
+
+/** The JSON answer: the last text block. */
+function lastJson(content: Anthropic.Beta.BetaContentBlock[], label: string): Record<string, unknown> {
+  const texts = content.filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text" && Boolean(b.text.trim()));
+  const raw = texts.at(-1)?.text;
+  if (!raw) throw new Error(`The ${label} returned nothing.`);
+  const data: unknown = JSON.parse(raw);
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(`The ${label} returned an unexpected answer.`);
+  return data as Record<string, unknown>;
+}
+
+function logUsage(label: string, message: Anthropic.Beta.BetaMessage) {
+  if (process.env.NODE_ENV === "production") return;
+  const u = message.usage;
+  console.log(
+    `[ainsley] ${label} ${message.model} stop=${message.stop_reason} input=${u.input_tokens} output=${u.output_tokens}`,
+  );
+}
