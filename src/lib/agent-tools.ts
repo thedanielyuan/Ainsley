@@ -1,17 +1,20 @@
 import { parseEvaluateInput, VERDICT_LABELS, workAttachments } from "./answer-check";
 import { runCourseTool, type ToolContext, type ToolOutcome } from "./course-tools";
 import { getLibrary } from "./library";
-import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL } from "./tool-names";
-import type { Activity, EvaluateResponse, Material } from "./types";
+import { problemId, savedSolution, saveSolution } from "./problems";
+import { formatSolution, parseSolution, parseSolveInput, SOLUTION_LABELS } from "./solution";
+import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL, SOLVE_TOOL } from "./tool-names";
+import type { Activity, EvaluateResponse, Material, SolveResponse, VerifiedSolution } from "./types";
 
 /**
  * Runs the tool calls Ainsley makes on the browser's side of its loop, and describes each for the
- * activity list under a reply. Course tools read the local library; answer checks go to
- * /api/evaluate. (Web search and fetch run on Anthropic's side.)
+ * activity list under a reply. Course tools read the local library; solving goes to /api/solve
+ * (and the solution is saved here), answer checks to /api/evaluate. (Web search and fetch run on
+ * Anthropic's side.)
  */
 
 export interface AgentToolContext extends ToolContext {
-  /** Files on the student's latest message: the work an answer check should look at. */
+  /** Files on the student's latest message: the problem or work a solve or answer check looks at. */
   attachments: Material[];
 }
 
@@ -20,12 +23,75 @@ export async function runTool(
   ctx: AgentToolContext,
   signal: AbortSignal,
 ): Promise<ToolOutcome> {
+  if (call.name === SOLVE_TOOL) return runSolve(call, ctx, signal);
   if (call.name === EVALUATE_TOOL) return runEvaluate(call, ctx, signal);
   return runCourseTool(call, ctx, signal);
 }
 
 function failed(id: string, message: string, detail: string): ToolOutcome {
   return { result: { type: "tool_result", tool_use_id: id, is_error: true, content: message }, detail, ok: false };
+}
+
+function answered(id: string, content: string, detail: string): ToolOutcome {
+  return { result: { type: "tool_result", tool_use_id: id, content }, detail, ok: true };
+}
+
+/** Posts a tool's work to one of Ainsley's own endpoints; the JSON reply, or a failed outcome. */
+async function post<T>(
+  url: string,
+  body: unknown,
+  call: { id: string },
+  signal: AbortSignal,
+  failure: { what: string; fallback: string; detail: string },
+): Promise<{ data: T } | { outcome: ToolOutcome }> {
+  let res: Response;
+  let data: (T & { error?: string }) | null = null;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    data = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
+  } catch (err) {
+    if (signal.aborted) throw err;
+    return { outcome: failed(call.id, `${failure.what} couldn't be reached. ${failure.fallback}`, failure.detail) };
+  }
+  if (!res.ok || !data) {
+    const reason = data?.error ? `: ${data.error}` : ` (${res.status})`;
+    return { outcome: failed(call.id, `${failure.what} failed${reason}. ${failure.fallback}`, failure.detail) };
+  }
+  return { data };
+}
+
+async function runSolve(
+  call: { id: string; input: unknown },
+  ctx: AgentToolContext,
+  signal: AbortSignal,
+): Promise<ToolOutcome> {
+  const input = parseSolveInput(call.input);
+  if (typeof input === "string") return failed(call.id, input, "Couldn't run");
+
+  // The same problem in the same course is worked out once.
+  const id = await problemId(input, ctx.courseId);
+  const saved = await savedSolution(id);
+  if (saved) return answered(call.id, formatSolution(id, saved), SOLUTION_LABELS[saved.status]);
+
+  const fallback = "Work the problem out yourself, carefully, and don't present your answer as verified.";
+  const reply = await post<Partial<SolveResponse>>(
+    "/api/solve",
+    { input, attachments: workAttachments(ctx.attachments) },
+    call,
+    signal,
+    { what: "Solving", fallback, detail: "Couldn't solve" },
+  );
+  if ("outcome" in reply) return reply.outcome;
+  const solution = parseSolution(reply.data.solution);
+  if (!solution) return answered(call.id, `The solvers declined to work this problem. ${fallback}`, "Couldn't solve");
+
+  await saveSolution(id, ctx.courseId, input.problem, solution);
+  return answered(call.id, formatSolution(id, solution), SOLUTION_LABELS[solution.status]);
 }
 
 async function runEvaluate(
@@ -36,30 +102,27 @@ async function runEvaluate(
   const input = parseEvaluateInput(call.input);
   if (typeof input === "string") return failed(call.id, input, "Couldn't run");
 
-  const fallback = "Check the answer yourself, carefully.";
-  let res: Response;
-  let data: Partial<EvaluateResponse> | null = null;
-  try {
-    res = await fetch("/api/evaluate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input, attachments: workAttachments(ctx.attachments) }),
-      signal,
-    });
-    data = (await res.json().catch(() => null)) as Partial<EvaluateResponse> | null;
-  } catch (err) {
-    if (signal.aborted) throw err;
-    return failed(call.id, `The answer check couldn't be reached. ${fallback}`, "Couldn't check");
+  // A problem Ainsley worked out first: the checker starts from its solution.
+  let solution: VerifiedSolution | null = null;
+  let note = "";
+  if (input.problem_id) {
+    solution = await savedSolution(input.problem_id);
+    if (!solution) note = `No saved solution has the id ${input.problem_id}, so the check worked the problem out itself.\n\n`;
   }
-  if (!res.ok || typeof data?.content !== "string" || !data.verdict) {
-    const reason = data?.error ? `: ${data.error}` : ` (${res.status})`;
-    return failed(call.id, `The answer check failed${reason}. ${fallback}`, "Couldn't check");
+
+  const reply = await post<Partial<EvaluateResponse>>(
+    "/api/evaluate",
+    { input, attachments: workAttachments(ctx.attachments), solution },
+    call,
+    signal,
+    { what: "The answer check", fallback: "Check the answer yourself, carefully.", detail: "Couldn't check" },
+  );
+  if ("outcome" in reply) return reply.outcome;
+  const { content, verdict } = reply.data;
+  if (typeof content !== "string" || !verdict) {
+    return failed(call.id, "The answer check failed. Check the answer yourself, carefully.", "Couldn't check");
   }
-  return {
-    result: { type: "tool_result", tool_use_id: call.id, content: data.content },
-    detail: VERDICT_LABELS[data.verdict] ?? "Checked",
-    ok: true,
-  };
+  return answered(call.id, note + content, VERDICT_LABELS[verdict] ?? "Checked");
 }
 
 /** A tool call as the activity list shows it while it runs; null for calls that aren't shown. */
@@ -75,6 +138,8 @@ export function toolActivity(name: string, input: Record<string, unknown>, id: s
     }
     case MODULE_TOOL:
       return { id, kind: "module", label: str(input.module).trim() || "a module", status: "running" };
+    case SOLVE_TOOL:
+      return { id, kind: "solve", label: str(input.problem).replace(/\s+/g, " ").trim(), status: "running" };
     case EVALUATE_TOOL:
       return { id, kind: "evaluate", label: str(input.problem).replace(/\s+/g, " ").trim(), status: "running" };
     case "web_search":

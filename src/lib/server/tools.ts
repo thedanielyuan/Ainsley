@@ -1,15 +1,16 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
-import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL } from "@/lib/tool-names";
+import { EVALUATE_TOOL, MODULE_TOOL, OPEN_TOOL, SEARCH_TOOL, SOLVE_TOOL } from "@/lib/tool-names";
 
 /**
  * Ainsley's tools. The model picks among them by what the student is trying to do (see "Your
  * tools" in the system prompt); the descriptions say when each one is the right choice.
  *
  * Declared identically on every request, from a chat's first turn: the tool set is part of the
- * prefix that preserved thinking and the prompt cache are bound to. The course tools and
- * evaluate_answer run in the browser (where the library lives; answer checks go on to
- * /api/evaluate); web search and fetch run on Anthropic's side.
+ * prefix that preserved thinking and the prompt cache are bound to. The course tools,
+ * solve_problem and evaluate_answer run in the browser (where the library and saved solutions
+ * live; solving goes on to /api/solve, answer checks to /api/evaluate); web search and fetch run
+ * on Anthropic's side.
  */
 
 // Homework-answer sites: unreliable, and reading their solutions would do the student's
@@ -93,12 +94,43 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     eager_input_streaming: true,
   },
   {
+    name: SOLVE_TOOL,
+    description:
+      "Work out a verified solution to a problem before you guide the student through it, show a worked example, or set it as practice. Two solvers work it independently, verifying calculations, algebra, and code by running Python; their answers are compared, checked against an answer key from their materials if you pass one, and any difference is settled or flagged. " +
+      "Returns, for you rather than the student: whether it's verified, the final answers, the steps a student would write, what a complete answer must contain, and a problem id to pass to evaluate_answer when the student attempts it. " +
+      "Use it for multi-step problems where correctness matters: calculations, derivations, proofs, code. Skip it for quick recall, a one-step calculation, or a conceptual question. A new problem takes from about 15 seconds to a couple of minutes to solve; the same problem again returns the saved solution. " +
+      "Photos and short PDFs attached to the student's latest message are shown to the solvers too.",
+    input_schema: {
+      type: "object",
+      properties: {
+        problem: {
+          type: "string",
+          description:
+            "The problem exactly as the student was given it — from their materials, their message, or a practice question you're writing — with every given value and condition and what is asked. Quote it when it comes from a file.",
+        },
+        reference: {
+          type: "string",
+          description:
+            "Optional. An answer key, worked solution, or marking scheme for this problem from their course materials. Leave it out if you didn't find one; don't write your own.",
+        },
+        course_expectations: {
+          type: "string",
+          description:
+            "Optional. What their course requires: a method, notation, units, significant figures, or what counts as a complete proof.",
+        },
+      },
+      required: ["problem"],
+      additionalProperties: false,
+    },
+    eager_input_streaming: true,
+  },
+  {
     name: EVALUATE_TOOL,
     description:
-      "Have an independent grader check a student's answer or worked solution. It solves the problem itself, verifies calculations, algebra, and code by running Python, accepts equivalent forms and other valid methods, and returns a verdict (correct, partially correct, incorrect, incomplete), what's right, the first error with the misconception likely behind it, and a hint toward it. " +
+      "Have an independent checker mark a student's answer or worked solution step by step. Each step of their working comes back marked (correct, an error, following from an earlier error, missing a justification, or unreadable), with calculations, algebra, and code verified by running Python and equivalent forms and other valid methods accepted; plus a verdict (correct, partially correct, incorrect, incomplete), what's right, the first error with the misconception likely behind it (and a question that tells two possible misconceptions apart), how sure it is that it read their work right, and a hint. " +
       "Use it whenever the student offers a substantive attempt — a calculation, derivation, proof, code, a multi-step solution, or an explanation to judge against key ideas — before you tell them whether it's right. Judge quick recall answers (a term, a single fact) yourself. " +
-      "If their materials might hold an answer key, worked solution, or marking scheme for the problem, find it first and pass it as `reference`. " +
-      "Photos and short PDFs attached to the student's latest message are shown to the grader too. The assessment is for you, not the student.",
+      "If you worked the problem out with solve_problem, pass its problem_id, so the check starts from that verified solution. If their materials might hold an answer key, worked solution, or marking scheme for the problem, find it first and pass it as `reference`. " +
+      "Photos and short PDFs attached to the student's latest message are shown to the checker too. The assessment is for you, not the student.",
     input_schema: {
       type: "object",
       properties: {
@@ -111,6 +143,10 @@ export const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
           type: "string",
           description:
             "The student's answer and working, verbatim: every step they showed, in their notation, mistakes included. Transcribe a photo exactly; don't fix or tidy anything.",
+        },
+        problem_id: {
+          type: "string",
+          description: "Optional. The problem id solve_problem gave you for this problem.",
         },
         reference: {
           type: "string",

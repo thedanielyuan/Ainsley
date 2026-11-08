@@ -11,6 +11,7 @@ import {
   Lightbulb,
   Link2,
   Search,
+  SquareFunction,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
@@ -36,16 +37,17 @@ const ICONS: Record<Activity["kind"], LucideIcon> = {
   materials: BookOpen,
   open: FileSearch,
   module: Layers,
+  solve: SquareFunction,
   evaluate: ClipboardCheck,
   web_search: Globe,
   web_fetch: Link2,
 };
 
-/** Result filtering can repeat an identical lookup; show it once. Thoughts and answer checks stand alone. */
+/** Result filtering can repeat an identical lookup; show it once. Thoughts, solves and answer checks stand alone. */
 function dedupe(activity: Activity[]) {
   const seen = new Set<string>();
   return activity.filter((a) => {
-    if (a.kind === "thought" || a.kind === "evaluate") return true;
+    if (a.kind === "thought" || a.kind === "solve" || a.kind === "evaluate") return true;
     const key = `${a.kind}:${a.label}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -90,6 +92,8 @@ function describe(a: Activity): ReactNode {
       return `${now ? "Opening" : "Opened"} ${a.label}`;
     case "module":
       return `${now ? "Reading" : "Read"} “${a.label}” from your course`;
+    case "solve":
+      return now ? "Solving the problem" : "Solved the problem";
     case "evaluate":
       return now ? "Checking your answer" : "Checked your answer";
     case "web_fetch":

@@ -1,15 +1,18 @@
 import { parseEvaluateInput } from "@/lib/answer-check";
 import { describeError } from "@/lib/server/anthropic";
-import { evaluateAnswer, formatAssessment, parseAttachments } from "@/lib/server/evaluate";
+import { parseAttachments } from "@/lib/server/attachments";
+import { evaluateAnswer, formatAssessment } from "@/lib/server/evaluate";
+import { parseSolution } from "@/lib/solution";
 import type { EvaluateResponse } from "@/lib/types";
 
 /**
  * Runs an evaluate_answer call for the browser, which drives Ainsley's tool loop: an
- * independent grader checks the student's attempt and the assessment goes back to Ainsley
+ * independent checker marks the student's attempt step by step, starting from the problem's
+ * verified solution when Ainsley worked it out first, and the assessment goes back to Ainsley
  * as the tool result.
  */
 export async function POST(req: Request) {
-  let payload: { input?: unknown; attachments?: unknown } | null;
+  let payload: { input?: unknown; attachments?: unknown; solution?: unknown } | null;
   try {
     payload = await req.json();
   } catch {
@@ -20,11 +23,14 @@ export async function POST(req: Request) {
   if (typeof input === "string") return Response.json({ error: input }, { status: 400 });
   const attachments = parseAttachments(payload?.attachments);
   if (typeof attachments === "string") return Response.json({ error: attachments }, { status: 400 });
+  // A solution the solvers couldn't produce is no help to the checker.
+  const parsed = parseSolution(payload?.solution);
+  const solution = parsed && parsed.status !== "cannot_solve" ? parsed : null;
 
   try {
-    const assessment = await evaluateAnswer(input, attachments, req.signal);
+    const assessment = await evaluateAnswer(input, solution, attachments, req.signal);
     const body: EvaluateResponse = assessment
-      ? { content: formatAssessment(assessment), verdict: assessment.verdict }
+      ? { content: formatAssessment(assessment, solution), verdict: assessment.verdict }
       : {
           content: "The answer check declined to assess this. Judge the answer yourself, carefully.",
           verdict: "cannot_evaluate",

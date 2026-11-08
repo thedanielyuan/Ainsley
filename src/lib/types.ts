@@ -67,7 +67,7 @@ export interface ContextState extends ChatScope {
 export interface Activity {
   /** The tool_use id; generated for a thought. */
   id: string;
-  kind: "thought" | "materials" | "open" | "module" | "evaluate" | "web_search" | "web_fetch";
+  kind: "thought" | "materials" | "open" | "module" | "solve" | "evaluate" | "web_search" | "web_fetch";
   /** What a tool call looked up; a thought's name ("" until /api/thought names it). */
   label: string;
   status: "running" | "done" | "error";
@@ -82,6 +82,62 @@ export interface EvaluateResponse {
   /** The tool result for Ainsley: the full assessment, worded for the tutor. */
   content: string;
   verdict: AnswerVerdict;
+  error?: string;
+}
+
+/** Whether solve_problem could confirm a problem's solution. */
+export type SolutionStatus = "verified" | "disputed" | "cannot_solve";
+
+/** A final answer: as presented, and as a sympy expression for machine comparison ("" if it isn't mathematical). */
+export interface SolutionAnswer {
+  /** The part it answers ("(a)"); "" for a single-part problem. */
+  part: string;
+  answer: string;
+  sympy: string;
+}
+
+/** One move of a worked solution, and the rule, law, or theorem behind it. */
+export interface SolutionStep {
+  step: string;
+  why: string;
+}
+
+/**
+ * A problem's solution as solve_problem gives it to Ainsley: worked out by two solvers
+ * independently, compared, and checked against the course's answer key when there is one.
+ */
+export interface VerifiedSolution {
+  status: SolutionStatus;
+  answers: SolutionAnswer[];
+  method: string;
+  steps: SolutionStep[];
+  /** What any complete answer must contain: what a marker would look for. */
+  keyIdeas: string[];
+  /** How ambiguous wording was read. */
+  assumptions: string;
+  /** How the answer was established: what agreed, and what was run to settle differences. */
+  verification: string;
+  /** How the course's answer key compares, if one was given. */
+  reference: "agrees" | "disagrees" | "none";
+  referenceIssue: string;
+  /** What's still uncertain (disputed), or what's missing (cannot_solve). */
+  doubt: string;
+}
+
+/** A solved problem, kept on this device so the same problem is only solved once. */
+export interface SavedProblem {
+  id: string;
+  courseId: string | null;
+  problem: string;
+  solution: VerifiedSolution;
+  /** Which version of the solver produced it; older solutions are worked out again. */
+  version: number;
+  createdAt: number;
+}
+
+/** Result of POST /api/solve: `solution` is null when the solvers declined the problem. */
+export interface SolveResponse {
+  solution: VerifiedSolution | null;
   error?: string;
 }
 
