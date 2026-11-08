@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join, posix } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { unzipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { getDocumentProxy } from "unpdf";
 
 export const MAX_SLIDE_UPLOAD_BYTES = 32 * 1024 * 1024;
@@ -54,8 +54,28 @@ function attributes(tag: string) {
     .map((match) => [match[1], decodeAttribute(match[3])]));
 }
 
-/** Inspect the ZIP directory before inflating metadata or letting Office open the file. */
-function inspectPresentation(data: Buffer): number {
+const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+const escapeAttribute = (value: string) => value.replace(/[&<>"]/g, (c) => XML_ESCAPES[c]);
+
+/** A relationships part holding just these relationships. */
+function relationshipsPart(relations: Array<Record<string, string>>) {
+  const items = relations.map((relation) =>
+    `<Relationship ${Object.entries(relation).map(([name, value]) => `${name}="${escapeAttribute(value)}"`).join(" ")}/>`);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${items.join("")}</Relationships>`;
+}
+
+/** The deck again, with these parts replaced. Stored, not compressed: the copy only lives until it's converted. */
+function replaceParts(data: Buffer, replacements: Map<string, string>) {
+  const parts = unzipSync(data);
+  for (const [name, text] of replacements) parts[name] = strToU8(text);
+  return zipSync(parts, { level: 0 });
+}
+
+/**
+ * Inspect the ZIP directory before inflating metadata or letting Office open the file. Returns the
+ * slide count, and the deck to convert: the original, or a copy without its links to outside files.
+ */
+function inspectPresentation(data: Buffer): { slides: number; deck: Uint8Array } {
   const files = new Set<string>();
   let totalSize = 0;
   let metadataSize = 0;
@@ -97,15 +117,21 @@ function inspectPresentation(data: Buffer): number {
     if (!contentTypes.includes("application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml")) throw new Error("Not a PPTX presentation.");
 
     const slideTargets = new Map<string, string>();
+    // Relationship parts that link to outside files, rewritten without those links.
+    const unlinked = new Map<string, string>();
     for (const [name, text] of xml) {
       if (!name.endsWith(".rels")) continue;
+      const kept: Array<Record<string, string>> = [];
+      let linksOut = false;
       for (const match of text.matchAll(/<(?:[\w.-]+:)?Relationship\b[^>]*>/g)) {
         const relation = attributes(match[0]);
         if (!relation.Target || !relation.Type || !relation.Id) throw new Error("Invalid relationship.");
         if (relation.TargetMode?.toLowerCase() === "external") {
-          // Hyperlinks do not load content. Linked images/objects could fetch network or
-          // device files while Office opens a deck, so require embedded copies instead.
-          if (!relation.Type.endsWith("/hyperlink")) throw new SlidePreviewError("This presentation links to external files. Save a copy with its images embedded to preview it.");
+          // Hyperlinks load nothing. A linked picture, video or object could make Office fetch a
+          // network or device file, so the link is dropped: Office draws the copy PowerPoint embeds
+          // beside a linked picture (decks often link pictures on their author's own computer).
+          if (relation.Type.endsWith("/hyperlink")) kept.push(relation);
+          else linksOut = true;
           continue;
         }
         const owner = name.replace(/_rels\/([^/]+)\.rels$/, "$1");
@@ -114,14 +140,18 @@ function inspectPresentation(data: Buffer): number {
           : posix.normalize(posix.join(posix.dirname(owner), relation.Target));
         if (target.startsWith("../") || target.includes("\\") || /^[a-z][a-z\d+.-]*:/i.test(target)) throw new Error("Invalid relationship target.");
         if (name === "ppt/_rels/presentation.xml.rels" && relation.Type.endsWith("/slide")) slideTargets.set(relation.Id, target);
+        kept.push(relation);
       }
+      if (linksOut) unlinked.set(name, relationshipsPart(kept));
     }
     const presentation = xml.get("ppt/presentation.xml")!;
+    // The slide list. Sections list the same slides again (by number, without a relationship id).
     const slideIds = [...presentation.matchAll(/<(?:[\w.-]+:)?sldId\b[^>]*>/g)]
-      .map((match) => attributes(match[0])["r:id"]);
-    if (!slideIds.length || slideIds.some((id) => !id || !files.has(slideTargets.get(id) ?? ""))) throw new Error("No valid slide list.");
+      .map((match) => attributes(match[0])["r:id"])
+      .filter((id): id is string => Boolean(id));
+    if (!slideIds.length || slideIds.some((id) => !files.has(slideTargets.get(id) ?? ""))) throw new Error("No valid slide list.");
     if (slideIds.length > MAX_SLIDES) throw new SlidePreviewError(`Presentations can have up to ${MAX_SLIDES} slides. Split this deck into smaller parts.`, 413);
-    return slideIds.length;
+    return { slides: slideIds.length, deck: unlinked.size ? replaceParts(data, unlinked) : data };
   } catch (error) {
     if (error instanceof SlidePreviewError) throw error;
     throw new SlidePreviewError("This presentation couldn’t be opened. Try saving it as a new .pptx file.");
@@ -155,14 +185,14 @@ const PROFILE = `<?xml version="1.0" encoding="UTF-8"?>
 
 /** Render originals, including hidden slides, to keep citation numbers unchanged. */
 export async function renderSlidePreview(data: Buffer, signal?: AbortSignal): Promise<Buffer> {
-  const slideCount = inspectPresentation(data);
+  const { slides, deck } = inspectPresentation(data);
   const executable = await findConverter();
   const directory = await mkdtemp(join(tmpdir(), "ainsley-slides-"));
   try {
     const profile = join(directory, "profile");
     await mkdir(join(profile, "user"), { recursive: true });
     await Promise.all([
-      writeFile(join(directory, "input.pptx"), data),
+      writeFile(join(directory, "input.pptx"), deck),
       writeFile(join(profile, "user", "registrymodifications.xcu"), PROFILE),
     ]);
     const options = JSON.stringify({
@@ -186,7 +216,7 @@ export async function renderSlidePreview(data: Buffer, signal?: AbortSignal): Pr
     if (!pdf.subarray(0, 1024).includes("%PDF-")) throw new Error("Converter did not produce a PDF.");
     const document = await getDocumentProxy(new Uint8Array(pdf));
     try {
-      if (document.numPages !== slideCount) throw new Error(`Expected ${slideCount} slides; rendered ${document.numPages} pages.`);
+      if (document.numPages !== slides) throw new Error(`Expected ${slides} slides; rendered ${document.numPages} pages.`);
     } finally {
       await document.loadingTask.destroy();
     }
