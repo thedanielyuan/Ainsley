@@ -67,7 +67,7 @@ export interface ContextState extends ChatScope {
 export interface Activity {
   /** The tool_use id; generated for a thought. */
   id: string;
-  kind: "thought" | "materials" | "open" | "module" | "solve" | "evaluate" | "web_search" | "web_fetch";
+  kind: "thought" | "materials" | "open" | "module" | "solve" | "evaluate" | "simulation" | "web_search" | "web_fetch";
   /** What a tool call looked up; a thought's name ("" until /api/thought names it). */
   label: string;
   status: "running" | "done" | "error";

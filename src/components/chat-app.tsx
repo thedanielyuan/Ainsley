@@ -1,7 +1,7 @@
 "use client";
 
 import { Menu as MenuIcon, PanelRight, Paperclip, Plus, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import { resolveScope } from "@/lib/course-context";
 import { linkFolder, unlinkFolder } from "@/lib/folders";
 import {
@@ -29,6 +29,7 @@ import { CourseDialog, MaterialPickerDialog, type CourseDialogValues } from "./d
 import { EmptyState } from "./empty-state";
 import { SearchDialog } from "./search-dialog";
 import { SettingsDialog } from "./settings-dialog";
+import { SimulationShareContext } from "./simulation/share-context";
 import { Sidebar } from "./sidebar";
 import { IconButton } from "./ui";
 import { WorkspaceContext, useElementWidth, useWorkspaceController } from "./workspace-context";
@@ -203,6 +204,19 @@ export function ChatApp() {
     drafts.setText("new", prompt);
     focusComposer();
   };
+
+  // "Share with Ainsley" on a simulation: what the student set or drew goes into their message,
+  // after anything they've already typed, ready to send with a question of their own. Stable, so
+  // simulations don't re-render with every keystroke.
+  const shareTarget = useRef<(text: string) => void>(() => {});
+  useLayoutEffect(() => {
+    shareTarget.current = (text: string) => {
+      const current = drafts.get(draftKey).text;
+      drafts.setText(draftKey, current.trim() ? `${current.trimEnd()}\n\n${text}` : text);
+      focusComposer();
+    };
+  });
+  const shareFromSimulation = useCallback((text: string) => shareTarget.current(text), []);
 
   /** A course's + in the sidebar: the new-chat screen, already in that course. */
   const startCourseChat = (courseId: string) => {
@@ -450,14 +464,16 @@ export function ChatApp() {
               onDeleteCourse={requestDeleteCourse}
             />
           ) : active ? (
-            <ConversationView
-              key={active.id}
-              conversation={active}
-              streaming={streaming}
-              composer={composer}
-              onRegenerate={chat.regenerate}
-              onEdit={chat.editMessage}
-            />
+            <SimulationShareContext.Provider value={shareFromSimulation}>
+              <ConversationView
+                key={active.id}
+                conversation={active}
+                streaming={streaming}
+                composer={composer}
+                onRegenerate={chat.regenerate}
+                onEdit={chat.editMessage}
+              />
+            </SimulationShareContext.Provider>
           ) : (
             <EmptyState composer={composer} onSuggestion={pickSuggestion} />
           ))}

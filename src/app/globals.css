@@ -65,6 +65,25 @@
   --course-6: #22d3ee;
   --course-7: #a3e635;
 
+  /* Simulations: one color per kind of force (from the course colors), the vector-field arrow
+     gradient from weak to strong, and divergence/curl shading (positive warm, negative cool). */
+  --sim-gravity: var(--course-1);
+  --sim-normal: var(--course-2);
+  --sim-friction: var(--course-4);
+  --sim-tension: var(--course-3);
+  --sim-applied: var(--course-0);
+  --sim-spring: var(--course-6);
+  --sim-drag: var(--course-5);
+  --sim-buoyancy: var(--course-6);
+  --sim-electric: var(--course-3);
+  --sim-magnetic: var(--course-5);
+  --sim-other: var(--color-muted);
+  --sim-field-1: #38bdf8;
+  --sim-field-2: #a78bfa;
+  --sim-field-3: #fb7185;
+  --sim-positive: #f87171;
+  --sim-negative: #60a5fa;
+
   --code-bg: #141414;
   --hl-comment: #7c7c86;
   --hl-keyword: #c4a7ff;
@@ -113,6 +132,12 @@
   --course-5: #db2777;
   --course-6: #0891b2;
   --course-7: #65a30d;
+
+  --sim-field-1: #0284c7;
+  --sim-field-2: #7c3aed;
+  --sim-field-3: #e11d48;
+  --sim-positive: #dc2626;
+  --sim-negative: #2563eb;
 
   --code-bg: #f4f4f4;
   --hl-comment: #6e7781;
@@ -699,6 +724,19 @@ body {
 .md input[type="checkbox"] {
   margin-right: 6px;
   accent-color: var(--color-accent);
+}
+
+/* ---------- Simulations (show_simulation) ---------- */
+
+.sim-range {
+  height: 20px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+/* The surrounding reply's 28px line height would space out the simulation's own text. */
+.md .sim {
+  line-height: 1.5;
 }
 
 /* ---------- Code highlighting (highlight.js tokens) ---------- */

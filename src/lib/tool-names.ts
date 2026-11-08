@@ -7,3 +7,4 @@ export const OPEN_TOOL = "open_course_material";
 export const MODULE_TOOL = "get_course_module";
 export const SOLVE_TOOL = "solve_problem";
 export const EVALUATE_TOOL = "evaluate_answer";
+export const SIMULATION_TOOL = "show_simulation";
