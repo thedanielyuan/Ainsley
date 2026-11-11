@@ -10,7 +10,7 @@ Start the app (`npm run dev`), then in another terminal:
 npm run eval
 ```
 
-That runs the math and tutoring suites and prints a summary table. `npm run eval` reads `ANTHROPIC_API_KEY` from `.env.local` for the harness's own model calls (the simulated students and the judge).
+That shows what it will run and what a run costs, asks you to confirm, then runs the math and tutoring suites and prints a summary table. Nothing runs unapproved: away from a terminal (a script, a coding agent's shell) the runner stops before spending anything unless it's given `--approved`, which an agent passes only once you've said yes to that run. In Claude Code, the `ask` rules in `.claude/settings.json` also turn every `npm run eval` command into a permission prompt for you, whatever permission mode the session is in. `npm run eval` reads `ANTHROPIC_API_KEY` from `.env.local` for the harness's own model calls (the simulated students and the judge).
 
 | Flag | Default | |
 | --- | --- | --- |
@@ -23,6 +23,7 @@ That runs the math and tutoring suites and prints a summary table. `npm run eval
 | `--url` | `AINSLEY_EVAL_URL`, `AINSLEY_TEST_URL`, or `http://localhost:3000` | The running app |
 | `--out` | `evals/results/<time>` | Where the results go (git-ignored) |
 | `--compare` | | A previous results directory: adds before and change columns |
+| `--approved` | | The user has approved this run: skips the prompt. Needed whenever nobody is at the terminal |
 | `--report` | | Re-print a saved run's table (with `--compare`, against another run) without calling anything |
 | `--rejudge` | | Re-score a saved run's conversations with the current judge and rubric (judge calls only, no app calls), so runs from before a judge change stay comparable |
 
@@ -34,7 +35,7 @@ For a before/after: run it on the base, change the code (the dev server reloads)
 
 A full run (both suites, four cases at a time) takes about 10 minutes and costs about $12; one suite costs $4–8. Most of that is the app's own Ainsley AI calls. Measured on the tutoring suite before the code execution calls were cached: each answer check about $0.07, each solve about $0.12 for its two solvers ($0.21 when the verifier settles a disagreement), and each request to `/api/chat` about $0.016 with the system prompt and conversation cached; the fast tier's checks of claims, replies and help add little. The simulated students and the judge add about $1.
 
-Runs add up: a day of parallel sessions each running their own baselines and re-runs cost over $100. To keep it down:
+Runs add up: a day of parallel sessions each running their own baselines and re-runs cost over $100. That's why every run, however small, waits for the user's approval. To keep it down:
 
 - Iterate with `--only`, `--limit` and `--turns 2`, and run a whole suite once, for the PR's after table.
 - Reuse baselines: save a run of main with `--out evals/results/main-<sha>-<suite>` and compare every change made on that commit against it, from any checkout (`git worktree list` shows them).

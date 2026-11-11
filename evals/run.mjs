@@ -2,9 +2,11 @@
 /**
  * Measures Ainsley against its three guiding principles, end to end, against a running app.
  * Usage: npm run eval -- [--suite math,tutoring,judge] [--only id,...] [--limit n] [--reps n]
- *        [--turns n] [--concurrency n] [--url http://localhost:3000] [--out dir] [--compare dir]
+ *        [--turns n] [--concurrency n] [--url http://localhost:3000] [--out dir] [--compare dir] [--approved]
  *        npm run eval -- --report dir [--compare dir]   (re-print a saved run; no API calls)
  *        npm run eval -- --rejudge dir [--out dir]      (re-score a saved run's conversations)
+ * A run or a re-score costs money and needs the user's approval: answer the prompt, or pass
+ * --approved once they have said yes to that run.
  * See evals/README.md.
  */
 import { execFileSync } from "node:child_process";
@@ -13,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { checkServer, loadApp, newTrial, trials } from "./lib/app.mjs";
+import { confirmRun } from "./lib/approval.mjs";
 import { HarnessError, harnessUsage } from "./lib/claude.mjs";
 import { gradeAnswers } from "./lib/math-grade.mjs";
 import { loadRun, renderReport } from "./lib/report.mjs";
@@ -40,6 +43,7 @@ const { values: args } = parseArgs({
     compare: { type: "string" },
     report: { type: "string" },
     rejudge: { type: "string" },
+    approved: { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -50,7 +54,7 @@ function fail(message) {
 }
 
 if (args.help) {
-  console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(2, 9).join("\n").replace(/^ \*\/? ?/gm, ""));
+  console.log(readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(2, 11).join("\n").replace(/^ \*\/? ?/gm, ""));
   process.exit(0);
 }
 
@@ -114,12 +118,14 @@ if (args.rejudge) {
   // The judge or rubric changed: label the saved conversations again, so runs from before the
   // change stay comparable. Nothing is sent to the app; math records are kept as they were.
   const saved = loadRun(args.rejudge);
-  const app = await loadApp(args.url);
-  const started = Date.now();
   const kept = saved.records.filter((r) => r.suite !== "tutoring");
   const errors = [...saved.errors];
   const convos = saved.records.filter((r) => r.suite === "tutoring");
-  console.log(`Re-scoring ${convos.length} conversations from ${args.rejudge} with the current judge and rubric.`);
+  const plan = `Re-scoring ${convos.length} conversations from ${args.rejudge} with the current judge and rubric.`;
+  await confirmRun(plan, args.approved);
+  const app = await loadApp(args.url);
+  const started = Date.now();
+  console.log(plan);
   const rescored = await pool(convos, concurrency, async (r) => {
     const scenario = SCENARIOS.find((s) => s.id === r.id);
     if (!scenario) {
@@ -179,9 +185,7 @@ for (const p of PROBLEMS) {
   if (gradeAnswers(p.answers, planted).correct !== false) fail(`Answer key self-test: ${p.id}'s planted answer doesn't grade as wrong.`);
 }
 
-const started = Date.now();
 const app = await loadApp(args.url);
-if (suites.some((s) => s !== "judge")) await checkServer(args.url);
 
 const jobs = [
   ...(suites.includes("math") ? mathJobs(options) : []),
@@ -190,6 +194,12 @@ const jobs = [
 ];
 if (jobs.length === 0) fail("No cases match. Check --only and --suite.");
 
+// Nothing has been sent anywhere yet, and nothing is until the user approves this run.
+const plan = `Ainsley evals: ${jobs.length} case${jobs.length === 1 ? "" : "s"} (${suites.join(", ")}) against ${args.url}, ${concurrency} at a time.`;
+await confirmRun(plan, args.approved);
+const started = Date.now();
+if (suites.some((s) => s !== "judge")) await checkServer(args.url);
+
 const stop = new AbortController();
 process.once("SIGINT", () => {
   console.log("\nStopping: finishing the report with the cases done so far (Ctrl-C again to quit now).");
@@ -197,10 +207,7 @@ process.once("SIGINT", () => {
   process.once("SIGINT", () => process.exit(130));
 });
 
-console.log(
-  `Ainsley evals: ${jobs.length} case${jobs.length === 1 ? "" : "s"} (${suites.join(", ")}) against ${args.url}, ${concurrency} at a time.` +
-    " Each case calls Ainsley AI's models, so this takes a while and costs real money.\n",
-);
+console.log(`${plan} Each case calls Ainsley AI's models, so this takes a while and costs real money.\n`);
 
 let finished = 0;
 let lastReport = Date.now();
