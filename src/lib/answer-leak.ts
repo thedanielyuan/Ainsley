@@ -27,7 +27,7 @@ export interface StatedAnswer {
   quote: string;
 }
 
-interface Quantity {
+export interface Quantity {
   evaluate: Evaluator;
   /** The variables it reads, sorted (v_0 and v0 are the same variable). */
   names: string[];
@@ -217,19 +217,37 @@ function elements(s: string): string[] | null {
   return s[0] === "(" && parts.length < 2 ? null : parts;
 }
 
-/** An answer's values: one, or each element of a set or tuple. Null when it can't be compared. */
-function sympyValues(sympy: string): Quantity[] | null {
+/** A sympy answer, read so its value can be compared. */
+export interface SympyAnswer {
+  /** Its value, or each element of a set, tuple or list, in the order written. */
+  values: Quantity[];
+  shape: "value" | "set" | "list";
+  /** The variable an equation gives the value of (the x in Eq(x, 3)); "" for a bare value. */
+  variable: string;
+}
+
+/** Reads an answer's sympy form. Null when it can't be compared (see UNSUPPORTED_SYMPY). */
+export function readSympy(sympy: string): SympyAnswer | null {
   let s = sympy.trim();
   if (!s || s.length > 400 || UNSUPPORTED_SYMPY.test(s)) return null;
+  let variable = "";
   const eq = /^Eq\(([\s\S]*)\)$/.exec(s);
   if (eq) {
     const [lhs, rhs, ...rest] = splitTopLevel(eq[1]);
     if (rest.length || !rhs || !/^[A-Za-z_]\w*$/.test(lhs)) return null;
+    variable = lhs.replace(/_/g, "") || lhs;
     s = rhs;
   }
-  const parts = (elements(s) ?? [s]).filter(Boolean);
-  const values = parts.map(sympyScalar);
-  return values.length && values.every(Boolean) ? (values as Quantity[]) : null;
+  const listed = elements(s);
+  const values = (listed ?? [s]).filter(Boolean).map(sympyScalar);
+  if (!values.length || !values.every(Boolean)) return null;
+  const shape = !listed ? "value" : /^(?:FiniteSet\(|\{)/.test(s) ? "set" : "list";
+  return { values: values as Quantity[], shape, variable };
+}
+
+/** An answer's values: one, or each element of a set or tuple. Null when it can't be compared. */
+function sympyValues(sympy: string): Quantity[] | null {
+  return readSympy(sympy)?.values ?? null;
 }
 
 function sympyScalar(source: string): Quantity | null {

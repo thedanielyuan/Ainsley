@@ -49,7 +49,7 @@ Before finishing, run these (seconds each; the tests need no server or key, and 
 ```bash
 npm run lint
 npx tsc --noEmit
-node --test tests/tutoring.test.mjs tests/simulation.test.mjs tests/knowledge.test.mjs "evals/**/*.test.mjs"
+node --test tests/tutoring.test.mjs tests/simulation.test.mjs tests/knowledge.test.mjs tests/answer-agreement.test.mjs "evals/**/*.test.mjs"
 ```
 
 CI's required check, **Lint and build**, runs `npm ci`, `npm run lint` and `npm run build` on Node 24.
@@ -63,6 +63,7 @@ CI's required check, **Lint and build**, runs `npm ci`, `npm run lint` and `npm 
 - `src/lib/ainsley-prompt.ts`: tutoring behavior and who Ainsley is (the system prompt).
 - `src/lib/server/tools.ts`, `src/lib/tool-names.ts`: tool declarations. Ainsley's own tools run in the browser (`src/lib/agent-tools.ts`, `src/lib/course-tools.ts`), which calls the `/api` routes; `src/lib/use-chat.ts` runs the agent loop.
 - `src/lib/server/solve.ts`, `evaluate.ts`, `check.ts`, `audit.ts`: the two solvers and the verifier, the step-by-step answer checker, `check_math`, and the check of each finished reply.
+- `src/lib/answer-agreement.ts`: when the two solvers' answers count as the same, so the verifier isn't needed. Anything it can't establish by evaluating the answers is a difference; keep it that way, and pin changes in `tests/answer-agreement.test.mjs`.
 - `src/lib/tutoring.ts`, `src/lib/server/help-review.ts`, `src/lib/answer-leak.ts`: the tutoring policy, the review of each reply's help, and answer-leak detection (logged in development, never blocked).
 - `src/lib/knowledge.ts`, `src/lib/prerequisites.ts`, `src/lib/server/prerequisites.ts`: the knowledge map across courses and `trace_prerequisites`.
 - Student data (chats, courses, materials, solutions, the knowledge map) stays in the browser's IndexedDB (`src/lib/storage.ts`). There is no server database.

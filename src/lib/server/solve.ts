@@ -1,4 +1,5 @@
 import "server-only";
+import { sameAnswers } from "@/lib/answer-agreement";
 import { parseSolution, readAnswers, readSteps, readStrings, type SolveInput } from "@/lib/solution";
 import type { ApiBlock, SolutionAnswer, SolutionStep, VerifiedSolution } from "@/lib/types";
 import { runCodeAgent } from "./code-agent";
@@ -6,8 +7,9 @@ import { runCodeAgent } from "./code-agent";
 /**
  * The solver behind Ainsley's solve_problem tool. Two solvers work the problem independently,
  * verifying what they compute by running code, and each checks its answers against every given
- * in the problem. When their answers match exactly, both found the givens consistent and raised
- * no problem with the statement, and there's no answer key to compare with, the solution stands;
+ * in the problem. When their answers have the same values (compared by evaluating their sympy
+ * forms, src/lib/answer-agreement.ts), both found the givens consistent and raised no problem
+ * with the statement, and there's no answer key to compare with, the solution stands;
  * otherwise a verifier settles the differences (or says what it can't) and checks the answer
  * key. A problem whose givens contradict each other can't be solved as stated, however well the
  * solvers agree on an answer from some of them. Ainsley uses the result to guide the student and
@@ -237,20 +239,6 @@ function describe(a: Attempt): string {
   return lines.join("\n");
 }
 
-const compact = (s: string) => s.replace(/\s+/g, "");
-
-/** Both solvers gave every answer as the same sympy expression, part by part. */
-function sameAnswers(a: Attempt, b: Attempt) {
-  return (
-    a.answers.length > 0 &&
-    a.answers.length === b.answers.length &&
-    a.answers.every((x, i) => {
-      const y = b.answers[i];
-      return Boolean(x.sympy) && compact(x.sympy) === compact(y.sympy) && compact(x.part).toLowerCase() === compact(y.part).toLowerCase();
-    })
-  );
-}
-
 function fromAttempt(a: Attempt, status: VerifiedSolution["status"], verification: string, doubt = ""): VerifiedSolution {
   return {
     status,
@@ -350,11 +338,12 @@ export async function solveProblem(
   const solved = attempts.filter((a) => a.solved);
   if (solved.length === 0) return cannotSolve(attempts.map((a) => a.issue).find(Boolean) ?? "");
 
-  // The common case: both solvers got the same answers, found every given consistent with them and
-  // nothing wrong with the problem, and there's no answer key to compare with. Agreeing on an
-  // answer from some of the givens isn't enough: a solver that flagged anything goes to the verifier.
+  // The common case: both solvers got the same answers (the same values, however each wrote them:
+  // see answer-agreement.ts), found every given consistent with them and nothing wrong with the
+  // problem, and there's no answer key to compare with. Agreeing on an answer from some of the
+  // givens isn't enough: a solver that flagged anything goes to the verifier.
   const clean = (a: Attempt) => a.givensConsistent && !a.issue;
-  if (solved.length === 2 && !input.reference && solved.every(clean) && sameAnswers(solved[0], solved[1])) {
+  if (solved.length === 2 && !input.reference && solved.every(clean) && sameAnswers(solved[0].answers, solved[1].answers)) {
     const [a, b] = solved;
     const checks = [a.checkedBy, b.checkedBy].filter(Boolean).map((c) => clip(c, 300));
     const verification = `Two solvers working independently reached the same ${a.answers.length === 1 ? "answer" : "answers"}.${
