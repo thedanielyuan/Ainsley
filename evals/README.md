@@ -27,7 +27,7 @@ That shows what it will run and what a run costs, asks you to confirm, then runs
 | `--report` | | Re-print a saved run's table (with `--compare`, against another run) without calling anything |
 | `--rejudge` | | Re-score a saved run's conversations with the current judge and rubric (judge calls only, no app calls), so runs from before a judge change stay comparable |
 
-For a before/after: run it on the base, change the code (the dev server reloads), run it again with `--compare evals/results/<first run>`, and put both tables in the PR. Changes to the system prompt or tutoring policy mostly need `--suite tutoring`; changes to the solver or checker need `--suite math`.
+For a before/after: run it on the base, change the code (the dev server reloads), and run it again with `--compare evals/results/<first run>`. Runs are optional and happen when the user asks for one ([AGENTS.md](../AGENTS.md#commands)). Changes to the system prompt or tutoring policy mostly need `--suite tutoring`; changes to the solver or checker need `--suite math`.
 
 `node --test "evals/**/*.test.mjs"` checks the answer grader and the answer key offline, for free. The runner repeats the answer-key check before every run.
 
