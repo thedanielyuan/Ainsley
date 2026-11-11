@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(npm run eval*)",
+      "Bash(npm run-script eval*)",
+      "Bash(node *evals/run.mjs*)"
+    ]
+  }
+}
